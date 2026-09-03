@@ -283,21 +283,28 @@ To monitor your physical home or office network with real packet observation:
    cd network-sentinel
    ```
 
-2. **Install Dependencies**:
+2. **Install Dependencies** (Recommended with **pnpm**):
    ```bash
-   npm install
+   # Enable pnpm if not already installed (Corepack is built into Node 18+)
+   corepack enable pnpm
+
+   # Install dependencies with lockfile validation
+   pnpm install
+   # Or using npm: npm install
    ```
 
 3. **Start the Development Server**:
    ```bash
-   npm run dev
+   pnpm dev
+   # Or using npm: npm run dev
    ```
    *The server starts on `http://localhost:3000`.*
 
 4. **Production Build & Run**:
    ```bash
-   npm run build
-   npm start
+   pnpm build
+   pnpm start
+   # Or using npm: npm run build && npm start
    ```
 
 5. **Enable Real Network Discovery**:
@@ -364,24 +371,26 @@ Connect to `ws://localhost:3000/ws`.
 
 ## Build & Development Commands
 
+Network Sentinel supports **pnpm** (preferred for deterministic, secure, non-flat module isolation) and **npm**:
+
 ```bash
 # Install dependencies
-npm install
+pnpm install          # or: npm install
 
 # Run backend and frontend in development mode
-npm run dev
+pnpm dev              # or: npm run dev
 
 # Run TypeScript typecheck / linter
-npm run lint
+pnpm run lint         # or: npm run lint
 
 # Compile frontend and bundle backend for production
-npm run build
+pnpm build            # or: npm run build
 
 # Start the compiled production server
-npm start
+pnpm start            # or: npm start
 
 # Clean build artifacts
-npm run clean
+pnpm run clean        # or: npm run clean
 ```
 
 ---
