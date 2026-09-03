@@ -24,7 +24,8 @@ Network Sentinel is a high-contrast, privacy-first network security console desi
 - [How to Use the App](#how-to-use-the-app)
   - [Cloud Sandbox / Demo Mode](#cloud-sandbox--demo-mode)
   - [Guided 5-Step Hackathon Demo](#guided-5-step-hackathon-demo)
-  - [On-Premise Deployment (Bare Metal / Raspberry Pi)](#on-premise-deployment-bare-metal--raspberry-pi)
+  - [Running on macOS (MacBook, Mac mini, iMac)](#running-on-macos-macbook-mac-mini-imac)
+  - [On-Premise Deployment (Linux / Raspberry Pi)](#on-premise-deployment-linux--raspberry-pi)
 - [REST & WebSocket API Reference](#rest--websocket-api-reference)
 - [Data Storage & Privacy](#data-storage--privacy)
 - [Build & Development Commands](#build--development-commands)
@@ -266,7 +267,79 @@ To demonstrate the full detection and remediation lifecycle in under 60 seconds:
 
 ---
 
-### On-Premise Deployment (Bare Metal / Raspberry Pi)
+### Running on macOS (MacBook, Mac mini, iMac)
+
+Network Sentinel runs natively on Apple Silicon (M1/M2/M3/M4) and Intel Macs on macOS Sonoma, Ventura, Monterey, and later. On macOS, Network Sentinel queries the native kernel neighbor table (`arp -an`) without needing root or `sudo` privileges.
+
+#### 1. Mac Prerequisites
+- **Homebrew** (recommended) or official Node.js installer:
+  ```bash
+  # Check if Node is installed
+  node -v
+
+  # If not installed, install via Homebrew:
+  brew install node pnpm
+  ```
+- Any standard terminal emulator (Terminal.app, iTerm2, Warp, Ghostty).
+
+#### 2. Find Your Mac's Wi-Fi Interface & Subnet
+On macOS, your primary Wi-Fi interface is typically `en0` (or `en1` on some Mac models or when using a Thunderbolt dock).
+
+Run these commands in your Mac terminal:
+```bash
+# Identify your active default route interface (typically en0):
+route get default | grep interface
+# Output example: interface: en0
+
+# Get your Mac's current local IP address:
+ipconfig getifaddr en0
+# Output example: 192.168.1.45  (Your subnet is 192.168.1.0/24)
+```
+
+#### 3. Clone and Start Network Sentinel
+```bash
+# Clone or extract the project
+cd network-sentinel
+
+# Enable pnpm and install dependencies
+corepack enable pnpm
+pnpm install
+
+# Start the full-stack development server
+pnpm dev
+# (Or using npm: npm install && npm run dev)
+```
+*The server will start on `http://localhost:3000`.*
+
+#### 4. macOS Firewall Notice
+When Node boots the server for the first time, macOS may present a system security dialog:
+> *"Do you want the application 'node' to accept incoming network connections?"*
+
+Click **Allow**. This enables the local dashboard and WebSocket real-time feeds to operate smoothly.
+
+#### 5. Enable Native macOS Subnet Scanning
+1. Open your browser (Safari, Chrome, Arc, Firefox) to `http://localhost:3000`.
+2. Navigate to **Settings** in the left sidebar.
+3. In **Network Interface & Subnet Discovery**:
+   - **Subnet Range**: Enter your local subnet (e.g., `192.168.1.0/24` or `10.0.0.0/24`).
+   - **Network Interface**: Set to `en0` (or your active interface from step 2).
+   - **Collector Driver**: Select `macOS Native Neighbor Table (arp -an)`.
+4. Click **Save Changes**.
+5. Click **Scan Subnet Now** in the top navigation bar.
+
+#### 6. Pro-Tip: Fast Subnet Population on macOS
+macOS only stores ARP neighbor table entries for devices your Mac has interacted with recently. If you want Network Sentinel to immediately catalog all devices on your Wi-Fi (such as smart TVs, IoT bulbs, phones, and printers):
+
+```bash
+# Send a quick broadcast ping across your subnet to wake up all LAN devices:
+ping -c 3 192.168.1.255
+# (Replace 192.168.1.255 with your subnet's broadcast address, or use 255.255.255.255)
+```
+After the broadcast ping returns, click **Scan Subnet Now** in the Network Sentinel UI. All active devices will immediately populate the **Subnet Inventory** and **2D Topology Map**.
+
+---
+
+### On-Premise Deployment (Linux / Raspberry Pi)
 
 To monitor your physical home or office network with real packet observation:
 

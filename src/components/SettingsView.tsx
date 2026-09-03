@@ -129,7 +129,7 @@ export const SettingsView: React.FC = () => {
             >
               <option value="mock">Mock / Security Lab Demo Driver</option>
               <option value="linux">Host Linux Neighbor Table (/proc/net/arp)</option>
-              <option value="macos">macOS ARP Neighbor Table</option>
+              <option value="macos">macOS Native Neighbor Table (arp -an)</option>
               <option value="windows">Windows IP Neighbor Table</option>
             </select>
           </div>

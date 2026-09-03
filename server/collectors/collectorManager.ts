@@ -1,6 +1,7 @@
 import { NetworkCollector } from './collector.interface';
 import { mockCollector } from './mockCollector';
 import { linuxCollector } from './linuxCollector';
+import { macosCollector } from './macosCollector';
 import { db } from '../db';
 import { NetworkEvent } from '../types';
 
@@ -17,6 +18,10 @@ export class CollectorManager {
     const settings = db.getSettings();
     if (settings.collectorType === 'linux' && (await linuxCollector.isAvailable())) {
       this.activeCollector = linuxCollector;
+    } else if (settings.collectorType === 'macos' && (await macosCollector.isAvailable())) {
+      this.activeCollector = macosCollector;
+    } else if (process.platform === 'darwin' && (await macosCollector.isAvailable())) {
+      this.activeCollector = macosCollector;
     } else {
       this.activeCollector = mockCollector;
     }
@@ -57,6 +62,8 @@ export class CollectorManager {
     await this.stop();
     if (type === 'linux' && (await linuxCollector.isAvailable())) {
       this.activeCollector = linuxCollector;
+    } else if (type === 'macos' && (await macosCollector.isAvailable())) {
+      this.activeCollector = macosCollector;
     } else {
       this.activeCollector = mockCollector;
     }
