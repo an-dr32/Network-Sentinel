@@ -1,0 +1,6 @@
+{
+  "name": "Network Sentinel",
+  "description": "Local-first defensive network monitoring and explainable intrusion detection system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

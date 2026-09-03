@@ -1,0 +1,155 @@
+import {
+  Device,
+  NetworkEvent,
+  Alert,
+  BaselineFeatures,
+  TopologyData,
+  SystemStatus,
+  ResponseResult,
+} from '../types';
+
+export const api = {
+  async getStatus(): Promise<SystemStatus> {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('Failed to fetch system status');
+    return res.json();
+  },
+
+  async getDevices(): Promise<Device[]> {
+    const res = await fetch('/api/devices');
+    if (!res.ok) throw new Error('Failed to fetch devices');
+    return res.json();
+  },
+
+  async getDevice(id: string): Promise<Device> {
+    const res = await fetch(`/api/devices/${id}`);
+    if (!res.ok) throw new Error(`Failed to fetch device ${id}`);
+    return res.json();
+  },
+
+  async updateTrustStatus(id: string, trustStatus: string): Promise<Device> {
+    const res = await fetch(`/api/devices/${id}/trust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trustStatus }),
+    });
+    if (!res.ok) throw new Error('Failed to update trust status');
+    return res.json();
+  },
+
+  async quarantineDevice(id: string, reason?: string): Promise<ResponseResult> {
+    const res = await fetch(`/api/devices/${id}/quarantine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Quarantine failed' }));
+      throw new Error(err.error || 'Failed to quarantine device');
+    }
+    return res.json();
+  },
+
+  async restoreDevice(id: string): Promise<ResponseResult> {
+    const res = await fetch(`/api/devices/${id}/restore`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to restore device');
+    return res.json();
+  },
+
+  async getEvents(limit = 100): Promise<NetworkEvent[]> {
+    const res = await fetch(`/api/events?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to fetch network events');
+    return res.json();
+  },
+
+  async getAlerts(): Promise<Alert[]> {
+    const res = await fetch('/api/alerts');
+    if (!res.ok) throw new Error('Failed to fetch alerts');
+    return res.json();
+  },
+
+  async resolveAlert(id: string): Promise<Alert> {
+    const res = await fetch(`/api/alerts/${id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resolvedBy: 'Operator' }),
+    });
+    if (!res.ok) throw new Error('Failed to resolve alert');
+    return res.json();
+  },
+
+  async getTopology(): Promise<TopologyData> {
+    const res = await fetch('/api/topology');
+    if (!res.ok) throw new Error('Failed to fetch topology');
+    return res.json();
+  },
+
+  async getBaseline(): Promise<BaselineFeatures> {
+    const res = await fetch('/api/baseline');
+    if (!res.ok) throw new Error('Failed to fetch baseline');
+    return res.json();
+  },
+
+  async startLearning(durationSeconds = 15): Promise<void> {
+    const res = await fetch('/api/baseline/start-learning', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ durationSeconds }),
+    });
+    if (!res.ok) throw new Error('Failed to start learning');
+  },
+
+  async finishLearning(): Promise<BaselineFeatures> {
+    const res = await fetch('/api/baseline/finish-learning', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to finish learning');
+    return res.json();
+  },
+
+  async triggerSecurityLabScenario(
+    scenario: 'new_device' | 'port_scan' | 'dns_anomaly' | 'traffic_spike' | 'ip_change',
+    payload?: { targetDeviceId?: string; customName?: string }
+  ): Promise<any> {
+    const res = await fetch('/api/security-lab/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario, ...payload }),
+    });
+    if (!res.ok) throw new Error('Failed to trigger scenario');
+    return res.json();
+  },
+
+  async resetSecurityLab(): Promise<void> {
+    const res = await fetch('/api/security-lab/reset', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to reset security lab');
+  },
+
+  async getSettings(): Promise<any> {
+    const res = await fetch('/api/settings');
+    if (!res.ok) throw new Error('Failed to fetch settings');
+    return res.json();
+  },
+
+  async updateSettings(settings: any): Promise<any> {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) throw new Error('Failed to update settings');
+    return res.json();
+  },
+
+  async triggerScan(): Promise<{ count: number; devices: Device[] }> {
+    const res = await fetch('/api/discovery/scan', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to trigger discovery scan');
+    return res.json();
+  },
+};
