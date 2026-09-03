@@ -311,6 +311,12 @@ pnpm dev
 ```
 *The server will start on `http://localhost:3000`.*
 
+> **Note on pnpm v10/v11 (`ERR_PNPM_IGNORED_BUILDS`)**:
+> Modern pnpm enforces supply-chain security by ignoring dependency build scripts unless approved. Network Sentinel already ships with pre-configured build permissions in `pnpm-workspace.yaml` for `esbuild`, `protobufjs`, and `@google/genai`. If you ever see a prompt regarding ignored builds, simply run:
+> ```bash
+> pnpm approve-builds --all
+> ```
+
 #### 4. macOS Firewall Notice
 When Node boots the server for the first time, macOS may present a system security dialog:
 > *"Do you want the application 'node' to accept incoming network connections?"*
@@ -484,3 +490,10 @@ pnpm run clean        # or: npm run clean
 1. Run **Baseline Learning Mode** so Sentinel can learn typical device traffic patterns.
 2. Mark verified devices as **Known / Trusted** to apply the `-20 pt` trust deduction.
 3. Adjust point weights in **Settings > Detection Engine Scoring Weights** to fit your network's specific profile.
+
+#### Q: Why did pnpm report `[ERR_PNPM_IGNORED_BUILDS]` during installation?
+**A**: In pnpm v10 and v11, lifecycle scripts (`postinstall`, `preinstall`) from packages like `esbuild` are ignored by default for supply-chain security. The repository includes a `pnpm-workspace.yaml` with pre-approved builds. If you ever update dependencies or see this error, run:
+```bash
+pnpm approve-builds --all
+```
+and re-run `pnpm dev`.

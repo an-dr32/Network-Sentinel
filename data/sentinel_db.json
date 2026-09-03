@@ -18,7 +18,7 @@
         }
       ],
       "firstSeen": "2026-09-03T19:39:28.272Z",
-      "lastSeen": "2026-09-03T23:03:48.465Z",
+      "lastSeen": "2026-09-03T23:15:20.470Z",
       "status": "online",
       "trustStatus": "known",
       "riskScore": 0,
@@ -63,10 +63,10 @@
       "riskEvidence": [],
       "quarantined": false,
       "trafficStats": {
-        "bytesSent": 57066225,
-        "bytesReceived": 111808686,
-        "packetCount": 115830,
-        "rateKbps": 99
+        "bytesSent": 62351072,
+        "bytesReceived": 121321347,
+        "packetCount": 124550,
+        "rateKbps": 68
       }
     },
     {
@@ -87,7 +87,7 @@
         }
       ],
       "firstSeen": "2026-09-03T19:39:28.272Z",
-      "lastSeen": "2026-09-03T23:03:48.466Z",
+      "lastSeen": "2026-09-03T23:15:20.471Z",
       "status": "online",
       "trustStatus": "known",
       "riskScore": 5,
@@ -124,10 +124,10 @@
       ],
       "quarantined": false,
       "trafficStats": {
-        "bytesSent": 39111017,
-        "bytesReceived": 77087321,
-        "packetCount": 76674,
-        "rateKbps": 198
+        "bytesSent": 44680918,
+        "bytesReceived": 87113076,
+        "packetCount": 85876,
+        "rateKbps": 93
       }
     },
     {
@@ -148,7 +148,7 @@
         }
       ],
       "firstSeen": "2026-09-03T19:39:28.272Z",
-      "lastSeen": "2026-09-03T23:03:48.466Z",
+      "lastSeen": "2026-09-03T23:15:20.471Z",
       "status": "online",
       "trustStatus": "known",
       "riskScore": 0,
@@ -186,10 +186,10 @@
       "riskEvidence": [],
       "quarantined": false,
       "trafficStats": {
-        "bytesSent": 82984482,
-        "bytesReceived": 71471583,
-        "packetCount": 101670,
-        "rateKbps": 608
+        "bytesSent": 88427561,
+        "bytesReceived": 81269059,
+        "packetCount": 110661,
+        "rateKbps": 680
       }
     },
     {
@@ -210,7 +210,7 @@
         }
       ],
       "firstSeen": "2026-09-03T19:39:28.272Z",
-      "lastSeen": "2026-09-03T23:03:48.466Z",
+      "lastSeen": "2026-09-03T23:15:20.471Z",
       "status": "online",
       "trustStatus": "known",
       "riskScore": 0,
@@ -234,10 +234,10 @@
       "riskEvidence": [],
       "quarantined": false,
       "trafficStats": {
-        "bytesSent": 41793914,
-        "bytesReceived": 69528542,
-        "packetCount": 70165,
-        "rateKbps": 218
+        "bytesSent": 47231092,
+        "bytesReceived": 79315392,
+        "packetCount": 79142,
+        "rateKbps": 32
       }
     },
     {
@@ -258,7 +258,7 @@
         }
       ],
       "firstSeen": "2026-09-03T19:39:28.272Z",
-      "lastSeen": "2026-09-03T23:03:48.466Z",
+      "lastSeen": "2026-09-03T23:15:20.471Z",
       "status": "online",
       "trustStatus": "known",
       "riskScore": 0,
@@ -288,10 +288,10 @@
       "riskEvidence": [],
       "quarantined": false,
       "trafficStats": {
-        "bytesSent": 38464594,
-        "bytesReceived": 69499759,
-        "packetCount": 64476,
-        "rateKbps": 198
+        "bytesSent": 43756418,
+        "bytesReceived": 79024973,
+        "packetCount": 73206,
+        "rateKbps": 191
       }
     }
   ],
