@@ -166,54 +166,63 @@ export const OverviewView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#27272A]">
-                  {devices.slice(0, 6).map((device) => {
-                    const riskStyle = getRiskBadgeClasses(device.riskSeverity);
-                    const trustStyle = getTrustStatusClasses(device.trustStatus);
-                    return (
-                      <tr
-                        key={device.id}
-                        onClick={() => setSelectedDevice(device)}
-                        className="hover:bg-[#18181B] cursor-pointer transition-colors"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <span
-                              className={`w-2 h-2 rounded-full ${
-                                device.status === 'online' ? 'bg-emerald-500' : 'bg-zinc-600'
-                              }`}
-                            />
-                            <div>
-                              <div className="font-medium text-[#FAFAFA] truncate max-w-[150px]">
-                                {device.hostname}
-                              </div>
-                              <div className="text-[11px] text-[#71717A] truncate max-w-[150px]">
-                                {device.vendor}
+                  {devices.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-[#71717A]">
+                        <p className="text-xs mb-1 font-medium text-zinc-300">No devices detected on subnet</p>
+                        <p className="text-[11px] text-zinc-500">Scan subnet from the header to discover active hardware nodes.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    devices.slice(0, 6).map((device) => {
+                      const riskStyle = getRiskBadgeClasses(device.riskSeverity);
+                      const trustStyle = getTrustStatusClasses(device.trustStatus);
+                      return (
+                        <tr
+                          key={device.id}
+                          onClick={() => setSelectedDevice(device)}
+                          className="hover:bg-[#18181B] cursor-pointer transition-colors"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  device.status === 'online' ? 'bg-emerald-500' : 'bg-zinc-600'
+                                }`}
+                              />
+                              <div>
+                                <div className="font-medium text-[#FAFAFA] truncate max-w-[150px]">
+                                  {device.hostname}
+                                </div>
+                                <div className="text-[11px] text-[#71717A] truncate max-w-[150px]">
+                                  {device.vendor}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 font-mono text-[#FAFAFA]">{device.currentIp}</td>
-                        <td className="px-3 py-3 font-mono text-[#71717A] text-[11px]">
-                          {device.macAddress}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${trustStyle.bg} ${trustStyle.text} ${trustStyle.border}`}
-                          >
-                            {device.quarantined ? 'ISOLATED' : device.trustStatus}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${riskStyle.dot}`} />
-                            {device.riskScore}/100
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-[#FAFAFA]">{device.currentIp}</td>
+                          <td className="px-3 py-3 font-mono text-[#71717A] text-[11px]">
+                            {device.macAddress}
+                          </td>
+                          <td className="px-3 py-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${trustStyle.bg} ${trustStyle.text} ${trustStyle.border}`}
+                            >
+                              {device.quarantined ? 'ISOLATED' : device.trustStatus}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono border ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${riskStyle.dot}`} />
+                              {device.riskScore}/100
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -328,33 +337,39 @@ export const OverviewView: React.FC = () => {
             </div>
 
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {recentEvents.map((evt) => (
-                <div
-                  key={evt.id}
-                  className="p-2.5 rounded bg-[#18181B] border border-[#27272A] text-xs flex items-start gap-2.5"
-                >
-                  <div className="mt-0.5">
-                    {evt.severity === 'critical' ? (
-                      <span className="w-2 h-2 rounded-full bg-red-500 block" />
-                    ) : evt.severity === 'suspicious' ? (
-                      <span className="w-2 h-2 rounded-full bg-amber-500 block" />
-                    ) : evt.severity === 'watch' ? (
-                      <span className="w-2 h-2 rounded-full bg-yellow-500 block" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-medium text-[#FAFAFA] truncate">{evt.title}</span>
-                      <span className="text-[#71717A] font-mono shrink-0 ml-2">
-                        {formatTimeAgo(evt.timestamp)}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-[#A1A1AA] truncate mt-0.5">{evt.description}</p>
-                  </div>
+              {recentEvents.length === 0 ? (
+                <div className="text-center py-6 text-[#71717A] text-xs">
+                  No events recorded yet. Ready to capture packets and anomalies.
                 </div>
-              ))}
+              ) : (
+                recentEvents.map((evt) => (
+                  <div
+                    key={evt.id}
+                    className="p-2.5 rounded bg-[#18181B] border border-[#27272A] text-xs flex items-start gap-2.5"
+                  >
+                    <div className="mt-0.5">
+                      {evt.severity === 'critical' ? (
+                        <span className="w-2 h-2 rounded-full bg-red-500 block" />
+                      ) : evt.severity === 'suspicious' ? (
+                        <span className="w-2 h-2 rounded-full bg-amber-500 block" />
+                      ) : evt.severity === 'watch' ? (
+                        <span className="w-2 h-2 rounded-full bg-yellow-500 block" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-[#FAFAFA] truncate">{evt.title}</span>
+                        <span className="text-[#71717A] font-mono shrink-0 ml-2">
+                          {formatTimeAgo(evt.timestamp)}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#A1A1AA] truncate mt-0.5">{evt.description}</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

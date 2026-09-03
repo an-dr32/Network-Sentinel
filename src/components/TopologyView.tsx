@@ -13,15 +13,26 @@ import {
   Printer,
   ShieldAlert,
   Info,
+  Radio,
 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
 import { TopologyNode } from '../types';
 import { getRiskBadgeClasses } from '../utils/formatters';
 
 export const TopologyView: React.FC = () => {
-  const { topology, devices, setSelectedDevice } = useNetwork();
+  const { topology, devices, setSelectedDevice, triggerDiscoveryScan } = useNetwork();
   const [zoom, setZoom] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScan = async () => {
+    setIsScanning(true);
+    try {
+      await triggerDiscoveryScan();
+    } finally {
+      setTimeout(() => setIsScanning(false), 800);
+    }
+  };
 
   const nodes = topology?.nodes || [];
 
@@ -131,92 +142,111 @@ export const TopologyView: React.FC = () => {
             }}
           />
 
-          <svg
-            viewBox="0 0 900 520"
-            className="w-full h-full max-h-[500px] transition-transform duration-200"
-            style={{ transform: `scale(${zoom})` }}
-          >
-            <defs>
-              <linearGradient id="linkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#10B981" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#059669" stopOpacity="0.1" />
-              </linearGradient>
-            </defs>
-
-            {/* WAN -> Gateway Link */}
-            <line
-              x1={layout.wanX}
-              y1={layout.wanY}
-              x2={layout.gwX}
-              y2={layout.gwY}
-              stroke="#3F3F46"
-              strokeWidth="2"
-              strokeDasharray="4 4"
-            />
-
-            {/* Gateway -> Device Links */}
-            {layout.nodes
-              .filter((n) => n.type === 'device')
-              .map((dev) => {
-                const isCrit = dev.riskSeverity === 'critical' || dev.quarantined;
-                const isSusp = dev.riskSeverity === 'suspicious';
-                const strokeColor = isCrit ? '#EF4444' : isSusp ? '#F59E0B' : '#10B981';
-
-                return (
-                  <g key={`link_${dev.id}`}>
-                    <line
-                      x1={layout.gwX}
-                      y1={layout.gwY}
-                      x2={dev.x}
-                      y2={dev.y}
-                      stroke={strokeColor}
-                      strokeWidth={dev.quarantined ? '1.5' : '2'}
-                      strokeDasharray={dev.quarantined ? '4 4' : 'none'}
-                      opacity={dev.quarantined ? 0.3 : 0.6}
-                    />
-                    {/* Animated Pulse along link if online & active */}
-                    {dev.status === 'online' && !dev.quarantined && (
-                      <circle r="3" fill={strokeColor}>
-                        <animateMotion
-                          path={`M ${layout.gwX} ${layout.gwY} L ${dev.x} ${dev.y}`}
-                          dur={`${2.5 + Math.random()}s`}
-                          repeatCount="indefinite"
-                        />
-                      </circle>
-                    )}
-                  </g>
-                );
-              })}
-
-            {/* WAN Node */}
-            <g transform={`translate(${layout.wanX}, ${layout.wanY})`} className="cursor-default">
-              <circle r="22" fill="#18181B" stroke="#3F3F46" strokeWidth="2" />
-              <Globe className="w-5 h-5 text-blue-400" x="-10" y="-10" />
-              <text y="36" textAnchor="middle" fill="#A1A1AA" fontSize="10" fontFamily="JetBrains Mono">
-                WAN Gateway
-              </text>
-            </g>
-
-            {/* Gateway Node */}
-            {gatewayNode && (
-              <g
-                transform={`translate(${layout.gwX}, ${layout.gwY})`}
-                onClick={() => setSelectedNodeId('dev_gateway_01')}
-                className="cursor-pointer group"
+          {nodes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center text-center p-8 z-10 max-w-md">
+              <div className="w-14 h-14 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center mb-4">
+                <Network className="w-7 h-7 text-zinc-500" />
+              </div>
+              <h3 className="text-sm font-semibold text-[#FAFAFA] mb-1">No Active Nodes Detected</h3>
+              <p className="text-xs text-[#71717A] mb-5 leading-relaxed">
+                All default mock nodes have been cleared. Perform a subnet scan to discover active hardware nodes on your local network.
+              </p>
+              <button
+                onClick={handleScan}
+                disabled={isScanning}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-md transition-colors shadow-sm disabled:opacity-50"
               >
-                <circle
-                  r="26"
-                  fill="#111113"
-                  stroke="#10B981"
-                  strokeWidth="2.5"
-                  className="transition-all group-hover:stroke-emerald-400 group-hover:scale-105"
-                />
-                <Router className="w-6 h-6 text-emerald-400" x="-12" y="-12" />
-                <text y="42" textAnchor="middle" fill="#FAFAFA" fontSize="11" fontWeight="600" fontFamily="Geist">
-                  Gateway (192.168.1.1)
+                <Radio className="w-3.5 h-3.5" />
+                <span>{isScanning ? 'Scanning Subnet...' : 'Scan Subnet Now'}</span>
+              </button>
+            </div>
+          ) : (
+            <svg
+              viewBox="0 0 900 520"
+              className="w-full h-full max-h-[500px] transition-transform duration-200"
+              style={{ transform: `scale(${zoom})` }}
+            >
+              <defs>
+                <linearGradient id="linkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.4" />
+                  <stop offset="100%" stopColor="#059669" stopOpacity="0.1" />
+                </linearGradient>
+              </defs>
+
+              {/* WAN -> Gateway Link */}
+              <line
+                x1={layout.wanX}
+                y1={layout.wanY}
+                x2={layout.gwX}
+                y2={layout.gwY}
+                stroke="#3F3F46"
+                strokeWidth="2"
+                strokeDasharray="4 4"
+              />
+
+              {/* Gateway -> Device Links */}
+              {layout.nodes
+                .filter((n) => n.type === 'device')
+                .map((dev) => {
+                  const isCrit = dev.riskSeverity === 'critical' || dev.quarantined;
+                  const isSusp = dev.riskSeverity === 'suspicious';
+                  const strokeColor = isCrit ? '#EF4444' : isSusp ? '#F59E0B' : '#10B981';
+
+                  return (
+                    <g key={`link_${dev.id}`}>
+                      <line
+                        x1={layout.gwX}
+                        y1={layout.gwY}
+                        x2={dev.x}
+                        y2={dev.y}
+                        stroke={strokeColor}
+                        strokeWidth={dev.quarantined ? '1.5' : '2'}
+                        strokeDasharray={dev.quarantined ? '4 4' : 'none'}
+                        opacity={dev.quarantined ? 0.3 : 0.6}
+                      />
+                      {/* Animated Pulse along link if online & active */}
+                      {dev.status === 'online' && !dev.quarantined && (
+                        <circle r="3" fill={strokeColor}>
+                          <animateMotion
+                            path={`M ${layout.gwX} ${layout.gwY} L ${dev.x} ${dev.y}`}
+                            dur={`${2.5 + Math.random()}s`}
+                            repeatCount="indefinite"
+                          />
+                        </circle>
+                      )}
+                    </g>
+                  );
+                })}
+
+              {/* WAN Node */}
+              <g transform={`translate(${layout.wanX}, ${layout.wanY})`} className="cursor-default">
+                <circle r="22" fill="#18181B" stroke="#3F3F46" strokeWidth="2" />
+                <Globe className="w-5 h-5 text-blue-400" x="-10" y="-10" />
+                <text y="36" textAnchor="middle" fill="#A1A1AA" fontSize="10" fontFamily="JetBrains Mono">
+                  WAN Gateway
                 </text>
               </g>
-            )}
+
+              {/* Gateway Node */}
+              {gatewayNode && (
+                <g
+                  transform={`translate(${layout.gwX}, ${layout.gwY})`}
+                  onClick={() => setSelectedNodeId(gatewayNode.id)}
+                  className="cursor-pointer group"
+                >
+                  <circle
+                    r="26"
+                    fill="#111113"
+                    stroke="#10B981"
+                    strokeWidth="2.5"
+                    className="transition-all group-hover:stroke-emerald-400 group-hover:scale-105"
+                  />
+                  <Router className="w-6 h-6 text-emerald-400" x="-12" y="-12" />
+                  <text y="42" textAnchor="middle" fill="#FAFAFA" fontSize="11" fontWeight="600" fontFamily="Geist">
+                    {gatewayNode.label || gatewayNode.ip || 'Gateway'}
+                  </text>
+                </g>
+              )}
 
             {/* Connected Devices */}
             {layout.nodes
@@ -277,7 +307,8 @@ export const TopologyView: React.FC = () => {
                   </g>
                 );
               })}
-          </svg>
+            </svg>
+          )}
         </div>
 
         {/* Node Inspector Panel */}

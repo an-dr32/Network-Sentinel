@@ -16,11 +16,13 @@ export class CollectorManager {
 
   private async init() {
     const settings = db.getSettings();
-    if (settings.collectorType === 'linux' && (await linuxCollector.isAvailable())) {
+    if (process.platform === 'darwin' && (await macosCollector.isAvailable())) {
+      this.activeCollector = macosCollector;
+    } else if (process.platform === 'linux' && (await linuxCollector.isAvailable())) {
+      this.activeCollector = linuxCollector;
+    } else if (settings.collectorType === 'linux' && (await linuxCollector.isAvailable())) {
       this.activeCollector = linuxCollector;
     } else if (settings.collectorType === 'macos' && (await macosCollector.isAvailable())) {
-      this.activeCollector = macosCollector;
-    } else if (process.platform === 'darwin' && (await macosCollector.isAvailable())) {
       this.activeCollector = macosCollector;
     } else {
       this.activeCollector = mockCollector;

@@ -101,50 +101,55 @@ async function startServer() {
 
   function generateTopologyData(): TopologyData {
     const devices = db.getDevices();
-    const nodes: TopologyNode[] = [
-      {
-        id: 'node_gateway',
-        label: 'Gateway Router (192.168.1.1)',
-        type: 'gateway',
-        ip: '192.168.1.1',
-        mac: 'd4:ca:6d:11:22:33',
-        status: 'online',
-        trustStatus: 'known',
-        riskScore: 0,
-        riskSeverity: 'normal',
-        deviceType: 'router',
-        vendor: 'MikroTik',
-      },
-    ];
+    if (devices.length === 0) {
+      return {
+        nodes: [],
+        edges: [],
+        lastUpdated: new Date().toISOString(),
+      };
+    }
 
+    // Find the detected gateway/router if any
+    const gatewayDevice = devices.find(
+      (d) =>
+        d.tags?.includes('gateway') ||
+        d.deviceType === 'router' ||
+        d.currentIp?.endsWith('.1')
+    );
+
+    const nodes: TopologyNode[] = [];
     const edges: TopologyEdge[] = [];
 
-    for (const d of devices) {
-      if (d.id === 'dev_gateway_01' || d.currentIp === '192.168.1.1') continue;
+    // The central hub node: if gateway is detected, use it; otherwise use the first device
+    const hubId = gatewayDevice ? gatewayDevice.id : devices[0].id;
 
+    for (const d of devices) {
+      const isGateway = d.id === hubId;
       nodes.push({
         id: d.id,
         label: d.hostname || d.currentIp,
-        type: 'device',
+        type: isGateway ? 'gateway' : 'device',
         ip: d.currentIp,
         mac: d.macAddress,
         status: d.status,
         trustStatus: d.trustStatus,
         riskScore: d.riskScore,
         riskSeverity: d.riskSeverity,
-        deviceType: d.deviceType,
+        deviceType: isGateway ? 'router' : d.deviceType,
         vendor: d.vendor,
         quarantined: d.quarantined,
       });
 
-      edges.push({
-        id: `edge_gw_${d.id}`,
-        source: 'node_gateway',
-        target: d.id,
-        trafficKbps: d.trafficStats.rateKbps,
-        active: d.status === 'online' && !d.quarantined,
-        protocol: d.openPorts.length > 0 ? d.openPorts[0].service.toUpperCase() : 'IP',
-      });
+      if (!isGateway) {
+        edges.push({
+          id: `edge_${hubId}_${d.id}`,
+          source: hubId,
+          target: d.id,
+          trafficKbps: d.trafficStats?.rateKbps || 0,
+          active: d.status === 'online' && !d.quarantined,
+          protocol: d.openPorts && d.openPorts.length > 0 ? d.openPorts[0].service.toUpperCase() : 'IP',
+        });
+      }
     }
 
     return {
