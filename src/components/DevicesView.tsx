@@ -30,14 +30,22 @@ export const DevicesView: React.FC = () => {
 
   const filteredDevices = useMemo(() => {
     return devices.filter((d) => {
+      if (!d) return false;
+      const hostname = d.hostname || '';
+      const currentIp = d.currentIp || '';
+      const macAddress = d.macAddress || '';
+      const vendor = d.vendor || '';
+      const tags = Array.isArray(d.tags) ? d.tags : [];
+      const query = searchQuery.toLowerCase();
+
       // Search filter
       const matchesSearch =
         searchQuery === '' ||
-        d.hostname.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.currentIp.includes(searchQuery) ||
-        d.macAddress.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.vendor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+        hostname.toLowerCase().includes(query) ||
+        currentIp.includes(query) ||
+        macAddress.toLowerCase().includes(query) ||
+        vendor.toLowerCase().includes(query) ||
+        tags.some((t) => t && t.toLowerCase().includes(query));
 
       // Trust status filter
       const matchesTrust = trustFilter === 'all' || d.trustStatus === trustFilter;
@@ -199,8 +207,8 @@ export const DevicesView: React.FC = () => {
                           onClick={() => setSelectedDevice(device)}
                         >
                           <div className="font-semibold text-[#FAFAFA] hover:text-emerald-400 transition-colors flex items-center gap-1.5">
-                            <span>{device.hostname}</span>
-                            {device.ipHistory.length > 1 && (
+                            <span>{device.hostname || 'Unnamed Device'}</span>
+                            {Array.isArray(device.ipHistory) && device.ipHistory.length > 1 && (
                               <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-800 text-zinc-400">
                                 {device.ipHistory.length} IPs
                               </span>

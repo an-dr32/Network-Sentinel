@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import {
   Device,
   NetworkEvent,
@@ -48,8 +48,30 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [quarantineTarget, setQuarantineTarget] = useState<Device | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
-  const [activeView, setActiveView] = useState<'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings'>('overview');
 
+  // Persist activeView across refreshes and hot reloads
+  const [activeView, setActiveViewState] = useState<'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings'>(() => {
+    try {
+      const saved = sessionStorage.getItem('sentinel_active_view') as any;
+      if (saved && ['overview', 'devices', 'topology', 'activity', 'alerts', 'security-lab', 'settings'].includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'overview';
+  });
+
+  const setActiveView = useCallback((view: 'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings') => {
+    try {
+      sessionStorage.setItem('sentinel_active_view', view);
+    } catch {
+      // ignore
+    }
+    setActiveViewState(view);
+  }, []);
+
+  // Stable data refresh function
   const refreshAll = useCallback(async () => {
     try {
       const [statusData, devicesData, eventsData, alertsData, baselineData, topoData] = await Promise.all([
@@ -68,64 +90,36 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (baselineData) setBaseline(baselineData);
       if (topoData) setTopology(topoData);
 
-      // Keep selected device synced if open
-      if (selectedDevice) {
-        const found = devicesData.find((d) => d.id === selectedDevice.id);
-        if (found) setSelectedDevice(found);
-      }
+      // Keep selected device synced if open without introducing dependency on selectedDevice
+      setSelectedDevice((prev) => {
+        if (!prev) return null;
+        const found = devicesData.find((d) => d.id === prev.id);
+        return found || prev;
+      });
     } catch (err) {
       console.error('Failed to load initial data:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDevice]);
+  }, []);
 
   // Initial load
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
 
-  // WebSocket live feed
+  // WebSocket lifecycle refs
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
+  const isWsConnectedRef = useRef(false);
+
+  // WebSocket live feed (strictly stable mount effect)
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-
-    function connect() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-      try {
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          setWsConnected(true);
-        };
-
-        ws.onmessage = (evt) => {
-          try {
-            const message = JSON.parse(evt.data);
-            handleWsMessage(message);
-          } catch {
-            // Ignore parse errors
-          }
-        };
-
-        ws.onclose = () => {
-          setWsConnected(false);
-          reconnectTimeout = setTimeout(connect, 3000);
-        };
-
-        ws.onerror = () => {
-          setWsConnected(false);
-          if (ws) ws.close();
-        };
-      } catch {
-        setWsConnected(false);
-        reconnectTimeout = setTimeout(connect, 3000);
-      }
-    }
+    isMountedRef.current = true;
 
     function handleWsMessage(message: { type: string; data: any }) {
+      if (!isMountedRef.current) return;
       switch (message.type) {
         case 'system.status':
           setStatus(message.data);
@@ -162,21 +156,90 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
+    function connect() {
+      if (!isMountedRef.current) return;
+      if (
+        wsRef.current &&
+        (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
+      ) {
+        return;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+      try {
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (!isMountedRef.current) return;
+          isWsConnectedRef.current = true;
+          setWsConnected(true);
+        };
+
+        ws.onmessage = (evt) => {
+          if (!isMountedRef.current) return;
+          try {
+            const message = JSON.parse(evt.data);
+            handleWsMessage(message);
+          } catch {
+            // Ignore parse errors
+          }
+        };
+
+        ws.onclose = () => {
+          if (!isMountedRef.current) return;
+          isWsConnectedRef.current = false;
+          setWsConnected(false);
+          wsRef.current = null;
+          if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = setTimeout(connect, 3000);
+        };
+
+        ws.onerror = () => {
+          if (!isMountedRef.current) return;
+          isWsConnectedRef.current = false;
+          setWsConnected(false);
+          try {
+            ws.close();
+          } catch {
+            // ignore
+          }
+        };
+      } catch {
+        if (!isMountedRef.current) return;
+        isWsConnectedRef.current = false;
+        setWsConnected(false);
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = setTimeout(connect, 3000);
+      }
+    }
+
     connect();
 
     // Fallback periodic poll in case websocket is disconnected
     const pollInterval = setInterval(() => {
-      if (!wsConnected) {
+      if (!isWsConnectedRef.current && isMountedRef.current) {
         refreshAll();
       }
     }, 5000);
 
     return () => {
-      if (ws) ws.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      isMountedRef.current = false;
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       clearInterval(pollInterval);
+      if (wsRef.current) {
+        // Disarm handlers so closing during unmount does not trigger callbacks
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [wsConnected, refreshAll]);
+  }, [refreshAll]);
 
   const updateDeviceTrust = async (deviceId: string, trustStatus: string) => {
     const updated = await api.updateTrustStatus(deviceId, trustStatus);

@@ -16,10 +16,12 @@ export function formatRate(kbps: number): string {
   return `${kbps.toFixed(0)} Kbps`;
 }
 
-export function formatTimeAgo(isoString: string): string {
+export function formatTimeAgo(isoString?: string): string {
+  if (!isoString) return 'never';
   const date = new Date(isoString);
+  if (isNaN(date.getTime())) return 'unknown';
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+  const diffMs = Math.max(0, now.getTime() - date.getTime());
   const diffSec = Math.floor(diffMs / 1000);
 
   if (diffSec < 5) return 'just now';
