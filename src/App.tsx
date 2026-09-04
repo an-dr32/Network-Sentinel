@@ -6,7 +6,7 @@ import { LearningBanner } from './components/LearningBanner';
 import { OverviewView } from './components/OverviewView';
 import { DevicesView } from './components/DevicesView';
 import { TopologyView } from './components/TopologyView';
-import { ActivityView } from './components/ActivityView';
+import { EventsView } from './components/EventsView';
 import { AlertsView } from './components/AlertsView';
 import { SecurityLabView } from './components/SecurityLabView';
 import { SettingsView } from './components/SettingsView';
@@ -17,12 +17,12 @@ const AppContent: React.FC = () => {
   const { activeView, selectedDevice, setSelectedDevice, quarantineTarget, setQuarantineTarget } = useNetwork();
 
   return (
-    <div id="app-root-container" className="flex min-h-screen bg-[#09090B] text-[#FAFAFA]">
-      {/* Sidebar Navigation */}
+    <div id="app-root-container" className="flex h-screen w-screen overflow-hidden bg-[#09090B] text-[#FAFAFA]">
+      {/* Sidebar Navigation - Static, does not scroll with main content */}
       <Sidebar />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Main Content Area - Independent Scroll Container */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <Header />
         <LearningBanner />
 
@@ -30,7 +30,7 @@ const AppContent: React.FC = () => {
           {activeView === 'overview' && <OverviewView />}
           {activeView === 'devices' && <DevicesView />}
           {activeView === 'topology' && <TopologyView />}
-          {activeView === 'activity' && <ActivityView />}
+          {(activeView === 'events' || activeView === 'activity') && <EventsView />}
           {activeView === 'alerts' && <AlertsView />}
           {activeView === 'security-lab' && <SecurityLabView />}
           {activeView === 'settings' && <SettingsView />}

@@ -15,7 +15,7 @@ import {
 import { useNetwork } from '../context/NetworkContext';
 
 export const Sidebar: React.FC = () => {
-  const { activeView, setActiveView, devices, alerts, status } = useNetwork();
+  const { activeView, setActiveView, devices, events, alerts, status } = useNetwork();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('sentinel_sidebar_collapsed') === 'true';
@@ -54,9 +54,11 @@ export const Sidebar: React.FC = () => {
       icon: Network,
     },
     {
-      id: 'activity' as const,
-      label: 'Activity Stream',
+      id: 'events' as const,
+      label: 'Events',
       icon: Activity,
+      badge: events.length > 0 ? (events.length > 99 ? '99+' : events.length.toString()) : undefined,
+      badgeColor: 'bg-zinc-800 text-zinc-300 border border-zinc-700/60 font-mono',
     },
     {
       id: 'alerts' as const,
@@ -83,7 +85,7 @@ export const Sidebar: React.FC = () => {
       id="sidebar-container"
       className={`${
         isCollapsed ? 'w-[72px]' : 'w-64'
-      } bg-[#111113] border-r border-[#27272A] flex flex-col shrink-0 min-h-screen select-none transition-all duration-300 ease-in-out relative`}
+      } bg-[#111113] border-r border-[#27272A] flex flex-col shrink-0 h-screen sticky top-0 left-0 select-none transition-all duration-300 ease-in-out relative z-30 overflow-hidden`}
     >
       {/* Brand Header with Animated Collapse Logo Button */}
       <div
@@ -160,7 +162,7 @@ export const Sidebar: React.FC = () => {
 
         {navItems.slice(0, 5).map((item) => {
           const Icon = item.icon;
-          const isActive = activeView === item.id;
+          const isActive = activeView === item.id || (item.id === 'events' && activeView === 'activity');
           return (
             <button
               key={item.id}

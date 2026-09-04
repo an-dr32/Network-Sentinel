@@ -102,7 +102,8 @@ export type NetworkEventType =
   | 'risk_changed'
   | 'response'
   | 'system_info'
-  | 'os_fingerprinted';
+  | 'os_fingerprinted'
+  | 'monitoring_event';
 
 export interface NetworkEvent {
   id: string;

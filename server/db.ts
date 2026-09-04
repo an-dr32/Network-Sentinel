@@ -8,6 +8,7 @@ import {
   SystemStatus,
   ResponseResult,
 } from './types';
+import { INITIAL_SUBNET_DEVICES, createInitialEvents } from './defaultDevices';
 
 interface DatabaseSchema {
   devices: Device[];
@@ -101,31 +102,21 @@ export class Database {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
 
-        // Sanitize: strip out legacy hardcoded mock devices and mock events
-        if (Array.isArray(parsed.devices)) {
-          parsed.devices = parsed.devices.filter(
-            (d: Device) => !LEGACY_MOCK_DEVICE_IDS.has(d.id)
-          );
-        } else {
-          parsed.devices = [];
+        if (!Array.isArray(parsed.devices) || parsed.devices.length === 0) {
+          parsed.devices = [...INITIAL_SUBNET_DEVICES];
         }
 
-        if (Array.isArray(parsed.events)) {
-          parsed.events = parsed.events.filter(
-            (e: NetworkEvent) =>
-              !['evt_init_01', 'evt_init_02', 'evt_init_03'].includes(e.id) &&
-              (!e.deviceId || !LEGACY_MOCK_DEVICE_IDS.has(e.deviceId))
-          );
-        } else {
-          parsed.events = [];
+        if (!Array.isArray(parsed.events) || parsed.events.length === 0) {
+          parsed.events = createInitialEvents(parsed.devices);
         }
 
-        if (!parsed.baseline || parsed.devices.length === 0) {
+        if (!parsed.baseline) {
           parsed.baseline = {
             ...INITIAL_BASELINE,
-            devicesLearned: parsed.devices.length,
           };
         }
+        parsed.baseline.devicesLearned = parsed.devices.length;
+        parsed.baseline.eventsAnalyzed = parsed.events.length;
 
         this.data = parsed;
         this.save();
@@ -147,11 +138,17 @@ export class Database {
   }
 
   public createDefaultDataset(): DatabaseSchema {
+    const devices = [...INITIAL_SUBNET_DEVICES];
+    const events = createInitialEvents(devices);
     return {
-      devices: [],
-      events: [],
+      devices,
+      events,
       alerts: [],
-      baseline: { ...INITIAL_BASELINE },
+      baseline: {
+        ...INITIAL_BASELINE,
+        devicesLearned: devices.length,
+        eventsAnalyzed: events.length,
+      },
       actions: [],
       settings: { ...INITIAL_SETTINGS },
     };
@@ -200,6 +197,14 @@ export class Database {
     return event;
   }
 
+  public clearEvents(): void {
+    this.data.events = [];
+    if (this.data.baseline) {
+      this.data.baseline.eventsAnalyzed = 0;
+    }
+    this.save();
+  }
+
   public getAlerts(): Alert[] {
     return [...this.data.alerts].reverse();
   }
@@ -235,6 +240,9 @@ export class Database {
   }
 
   public updateSettings(updates: Partial<DatabaseSchema['settings']>) {
+    if (updates.baselineDurationSeconds !== undefined) {
+      updates.baselineDurationSeconds = Math.min(60, Math.max(5, updates.baselineDurationSeconds));
+    }
     this.data.settings = { ...this.data.settings, ...updates };
     this.save();
     return this.data.settings;

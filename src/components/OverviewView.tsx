@@ -328,10 +328,10 @@ export const OverviewView: React.FC = () => {
                 <h3 className="text-sm font-semibold text-[#FAFAFA]">Live Event Stream</h3>
               </div>
               <button
-                onClick={() => setActiveView('activity')}
+                onClick={() => setActiveView('events')}
                 className="text-xs text-[#A1A1AA] hover:text-[#FAFAFA] flex items-center gap-1"
               >
-                <span>Audit Trail</span>
+                <span>View All Events</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>

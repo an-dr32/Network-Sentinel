@@ -64,6 +64,13 @@ export const api = {
     return res.json();
   },
 
+  async clearEvents(): Promise<void> {
+    const res = await fetch('/api/events/clear', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to clear network events');
+  },
+
   async getAlerts(): Promise<Alert[]> {
     const res = await fetch('/api/alerts');
     if (!res.ok) throw new Error('Failed to fetch alerts');
@@ -93,10 +100,11 @@ export const api = {
   },
 
   async startLearning(durationSeconds = 15): Promise<void> {
+    const capped = Math.min(60, Math.max(5, durationSeconds));
     const res = await fetch('/api/baseline/start-learning', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ durationSeconds }),
+      body: JSON.stringify({ durationSeconds: capped }),
     });
     if (!res.ok) throw new Error('Failed to start learning');
   },
@@ -145,9 +153,12 @@ export const api = {
     return res.json();
   },
 
-  async triggerScan(): Promise<{ count: number; devices: Device[] }> {
+  async triggerScan(durationSeconds?: number): Promise<{ count: number; devices: Device[]; durationSeconds?: number }> {
+    const capped = durationSeconds ? Math.min(60, Math.max(1, durationSeconds)) : undefined;
     const res = await fetch('/api/discovery/scan', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ durationSeconds: capped }),
     });
     if (!res.ok) throw new Error('Failed to trigger discovery scan');
     return res.json();

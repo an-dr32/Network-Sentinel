@@ -275,6 +275,21 @@ async function startServer() {
     res.json(db.getEvents(limit));
   });
 
+  // Clear Network Events History
+  app.post('/api/events/clear', (req, res) => {
+    db.clearEvents();
+    broadcast('events.cleared', {});
+    broadcast('system.status', getSystemStatus());
+    res.json({ success: true, message: 'Event history cleared successfully' });
+  });
+
+  app.delete('/api/events', (req, res) => {
+    db.clearEvents();
+    broadcast('events.cleared', {});
+    broadcast('system.status', getSystemStatus());
+    res.json({ success: true, message: 'Event history cleared successfully' });
+  });
+
   // Security Alerts
   app.get('/api/alerts', (req, res) => {
     res.json(db.getAlerts());
@@ -312,9 +327,10 @@ async function startServer() {
   });
 
   app.post('/api/baseline/start-learning', (req, res) => {
-    const duration = parseInt(req.body.durationSeconds) || 15;
+    const raw = parseInt(req.body?.durationSeconds) || db.getSettings()?.baselineDurationSeconds || 15;
+    const duration = Math.min(60, Math.max(5, raw));
     baselineManager.startLearning(duration);
-    res.json({ message: `Baseline learning initiated for ${duration} seconds.` });
+    res.json({ message: `Baseline learning initiated for ${duration} seconds.`, durationSeconds: duration });
   });
 
   app.post('/api/baseline/finish-learning', (req, res) => {
@@ -450,6 +466,8 @@ async function startServer() {
 
   // Discovery Trigger
   app.post('/api/discovery/scan', async (req, res) => {
+    const raw = parseInt(req.body?.durationSeconds) || 0;
+    const durationSeconds = Math.min(60, Math.max(0, raw));
     const devices = await collectorManager.discoverNow();
 
     // Automatically enrich devices with OS fingerprinting if not yet fingerprinted

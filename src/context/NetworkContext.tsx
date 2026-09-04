@@ -26,17 +26,23 @@ interface NetworkContextType {
   setQuarantineTarget: (device: Device | null) => void;
   isLoading: boolean;
   wsConnected: boolean;
-  activeView: 'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings';
-  setActiveView: (view: 'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings') => void;
+  activeView: 'overview' | 'devices' | 'topology' | 'events' | 'activity' | 'alerts' | 'security-lab' | 'settings';
+  setActiveView: (view: 'overview' | 'devices' | 'topology' | 'events' | 'activity' | 'alerts' | 'security-lab' | 'settings') => void;
   refreshAll: () => Promise<void>;
+  clearEvents: () => Promise<void>;
   updateDeviceTrust: (deviceId: string, trustStatus: string) => Promise<void>;
   resolveAlert: (alertId: string) => Promise<void>;
   triggerQuarantine: (deviceId: string, reason?: string) => Promise<void>;
   triggerRestore: (deviceId: string) => Promise<void>;
   startBaselineLearning: (durationSeconds?: number) => Promise<void>;
+  finishBaselineLearning: () => Promise<void>;
   runSecurityLabScenario: (scenario: 'new_device' | 'port_scan' | 'dns_anomaly' | 'traffic_spike' | 'ip_change', payload?: any) => Promise<any>;
   resetSecurityLab: () => Promise<void>;
-  triggerDiscoveryScan: () => Promise<void>;
+  isScanning: boolean;
+  scanRemainingSeconds: number;
+  scanTotalSeconds: number;
+  triggerDiscoveryScan: (durationSeconds?: number) => Promise<void>;
+  cancelDiscoveryScan: () => void;
   detectDeviceOs: (deviceId: string) => Promise<{ device: Device; fingerprint: any }>;
   detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
 }
@@ -56,12 +62,24 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [quarantineTarget, setQuarantineTarget] = useState<Device | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanRemainingSeconds, setScanRemainingSeconds] = useState(0);
+  const [scanTotalSeconds, setScanTotalSeconds] = useState(0);
+  const scanTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (scanTimerRef.current) {
+        clearInterval(scanTimerRef.current);
+      }
+    };
+  }, []);
 
   // Persist activeView across refreshes and hot reloads
-  const [activeView, setActiveViewState] = useState<'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings'>(() => {
+  const [activeView, setActiveViewState] = useState<'overview' | 'devices' | 'topology' | 'events' | 'activity' | 'alerts' | 'security-lab' | 'settings'>(() => {
     try {
       const saved = sessionStorage.getItem('sentinel_active_view') as any;
-      if (saved && ['overview', 'devices', 'topology', 'activity', 'alerts', 'security-lab', 'settings'].includes(saved)) {
+      if (saved && ['overview', 'devices', 'topology', 'events', 'activity', 'alerts', 'security-lab', 'settings'].includes(saved)) {
         return saved;
       }
     } catch {
@@ -70,7 +88,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return 'overview';
   });
 
-  const setActiveView = useCallback((view: 'overview' | 'devices' | 'topology' | 'activity' | 'alerts' | 'security-lab' | 'settings') => {
+  const setActiveView = useCallback((view: 'overview' | 'devices' | 'topology' | 'events' | 'activity' | 'alerts' | 'security-lab' | 'settings') => {
     try {
       sessionStorage.setItem('sentinel_active_view', view);
     } catch {
@@ -134,6 +152,9 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           break;
         case 'event.created':
           setEvents((prev) => [message.data, ...prev.slice(0, 199)]);
+          break;
+        case 'events.cleared':
+          setEvents([]);
           break;
         case 'alert.created':
           setAlerts((prev) => [message.data, ...prev]);
@@ -280,7 +301,83 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const startBaselineLearning = async (durationSeconds = 15) => {
-    await api.startLearning(durationSeconds);
+    const capped = Math.min(60, Math.max(5, durationSeconds));
+    await api.startLearning(capped);
+    await refreshAll();
+  };
+
+  const finishBaselineLearning = async () => {
+    await api.finishLearning();
+    await refreshAll();
+  };
+
+  const cancelDiscoveryScan = () => {
+    if (scanTimerRef.current) {
+      clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+    setIsScanning(false);
+    setScanRemainingSeconds(0);
+    setScanTotalSeconds(0);
+  };
+
+  const triggerDiscoveryScan = async (durationSeconds?: number) => {
+    const cappedDuration = durationSeconds && durationSeconds > 0 ? Math.min(60, Math.max(1, durationSeconds)) : 0;
+
+    if (scanTimerRef.current) {
+      clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+
+    setIsScanning(true);
+
+    if (cappedDuration > 0) {
+      setScanTotalSeconds(cappedDuration);
+      setScanRemainingSeconds(cappedDuration);
+
+      try {
+        await api.triggerScan(cappedDuration);
+        await refreshAll();
+      } catch (e) {
+        console.error('Scan error:', e);
+      }
+
+      let remaining = cappedDuration;
+      let tickCount = 0;
+      scanTimerRef.current = setInterval(async () => {
+        remaining -= 1;
+        tickCount += 1;
+        setScanRemainingSeconds(Math.max(0, remaining));
+
+        // Periodic background discovery sweep every 4 seconds during the timed scan
+        if (tickCount % 4 === 0 && remaining > 0) {
+          try {
+            await api.triggerScan();
+            await refreshAll();
+          } catch {}
+        }
+
+        if (remaining <= 0) {
+          if (scanTimerRef.current) {
+            clearInterval(scanTimerRef.current);
+            scanTimerRef.current = null;
+          }
+          setIsScanning(false);
+          setScanRemainingSeconds(0);
+          setScanTotalSeconds(0);
+          await refreshAll();
+        }
+      }, 1000);
+    } else {
+      setScanTotalSeconds(0);
+      setScanRemainingSeconds(0);
+      try {
+        await api.triggerScan();
+        await refreshAll();
+      } finally {
+        setTimeout(() => setIsScanning(false), 900);
+      }
+    }
   };
 
   const runSecurityLabScenario = async (
@@ -297,15 +394,20 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await refreshAll();
   };
 
-  const triggerDiscoveryScan = async () => {
-    await api.triggerScan();
-    await refreshAll();
-  };
-
   const detectDeviceOs = async (deviceId: string) => {
     const res = await api.detectDeviceOs(deviceId);
     await refreshAll();
     return res;
+  };
+
+  const clearEvents = async () => {
+    try {
+      await api.clearEvents();
+      setEvents([]);
+    } catch (err) {
+      console.error('Failed to clear events:', err);
+      throw err;
+    }
   };
 
   const detectAllDevicesOs = async () => {
@@ -334,14 +436,20 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activeView,
         setActiveView,
         refreshAll,
+        clearEvents,
         updateDeviceTrust,
         resolveAlert,
         triggerQuarantine,
         triggerRestore,
         startBaselineLearning,
+        finishBaselineLearning,
         runSecurityLabScenario,
         resetSecurityLab,
+        isScanning,
+        scanRemainingSeconds,
+        scanTotalSeconds,
         triggerDiscoveryScan,
+        cancelDiscoveryScan,
         detectDeviceOs,
         detectAllDevicesOs,
       }}

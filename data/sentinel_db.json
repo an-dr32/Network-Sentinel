@@ -1,0 +1,37 @@
+{
+  "devices": [],
+  "events": [],
+  "alerts": [],
+  "baseline": {
+    "isLearning": false,
+    "learningProgress": 0,
+    "confidenceScore": 0,
+    "devicesLearned": 0,
+    "eventsAnalyzed": 0,
+    "totalObservedPackets": 0,
+    "startTime": "2026-09-04T16:18:06.210Z",
+    "estimatedRemainingSeconds": 0,
+    "knownSubnets": [],
+    "typicalPorts": [],
+    "commonDnsDomains": [],
+    "averageTrafficKbps": 0
+  },
+  "actions": [],
+  "settings": {
+    "subnet": "192.168.1.0/24",
+    "interfaceName": "eth0",
+    "collectorType": "linux",
+    "autoScanIntervalSeconds": 10,
+    "baselineDurationSeconds": 15,
+    "riskWeights": {
+      "newDevice": 20,
+      "portScan": 30,
+      "unusualHosts": 20,
+      "unusualDns": 10,
+      "abnormalTraffic": 15,
+      "unidentifiedOs": 20,
+      "trustedBonus": 20,
+      "baselineBonus": 10
+    }
+  }
+}
