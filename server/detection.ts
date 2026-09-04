@@ -144,6 +144,54 @@ export class DetectionEngine {
       });
     }
 
+    // Rule 9: Undetected Operating System (adds +20 points per user requirement and security alert)
+    const isOsUndetected =
+      device.deviceType !== 'router' &&
+      (!device.osGuess ||
+        device.osGuess === 'Unknown OS' ||
+        device.osGuess === 'Generic IP Device' ||
+        device.osGuess === 'Unidentified Operating System' ||
+        device.osGuess === 'Unidentified OS' ||
+        device.osGuess.toLowerCase().includes('unknown') ||
+        device.osGuess.toLowerCase().includes('unidentified') ||
+        (device.osConfidence !== undefined && device.osConfidence < 50));
+
+    if (isOsUndetected) {
+      const osWeight = (weights as any).unidentifiedOs ?? 20;
+      rawScore += osWeight;
+      evidence.push({
+        rule: 'Undetected Operating System',
+        points: osWeight,
+        reason: 'Network stack blocked or failed fingerprinting probes (no standard TTL/service banner match). Assigned risk penalty.',
+        timestamp: now,
+      });
+
+      // Ensure an active security alert is registered for unidentified OS
+      const existingAlert = db.getAlerts().find(
+        (a) => a.deviceId === device.id && a.title.includes('Unidentified Operating System') && !a.resolved
+      );
+      if (!existingAlert) {
+        db.addAlert({
+          id: `alt_os_${device.id}_${Date.now()}`,
+          eventId: `evt_os_${device.id}_${Date.now()}`,
+          deviceId: device.id,
+          deviceName: device.hostname || device.currentIp,
+          deviceIp: device.currentIp,
+          title: 'Unidentified Operating System Detected',
+          description: `Device at ${device.currentIp} (${device.macAddress}) did not match known OS signatures. Flagged with ${osWeight}-point penalty for security review.`,
+          severity: 'watch',
+          riskScore: Math.min(100, rawScore),
+          reasons: [
+            'Network stack failed standard passive TTL and active service banner matching.',
+            'Unclassified operating system poses potential stealth / anomalous device risk.',
+          ],
+          resolved: false,
+          createdAt: now,
+          simulated: false,
+        });
+      }
+    }
+
     // Clamp score between 0 and 100
     const finalScore = Math.max(0, Math.min(100, rawScore));
 

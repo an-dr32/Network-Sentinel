@@ -63,7 +63,7 @@ export interface Device {
   osGuess?: string;
   osConfidence?: number;
   osDetectionDetails?: OsDetectionDetails;
-  deviceType: 'router' | 'workstation' | 'laptop' | 'smartphone' | 'iot' | 'server' | 'unknown';
+  deviceType: 'router' | 'workstation' | 'laptop' | 'smartphone' | 'iot' | 'server' | 'printer' | 'unknown';
   openPorts: OpenPort[];
   activeConnections?: DeviceConnection[];
   dnsLogs?: DnsQueryLog[];
@@ -164,6 +164,52 @@ export interface TopologyNode {
   deviceType?: string;
   vendor?: string;
   quarantined?: boolean;
+  routerTraffic?: DeviceRouterTrafficStats;
+}
+
+export type RouterRequestType =
+  | 'DNS'
+  | 'HTTPS'
+  | 'HTTP'
+  | 'DHCP'
+  | 'NTP'
+  | 'ICMP'
+  | 'mDNS'
+  | 'SSDP'
+  | 'SMB'
+  | 'SSH'
+  | 'OTHER';
+
+export interface RouterRequestEvent {
+  id: string;
+  timestamp: string;
+  sourceDeviceId: string;
+  sourceIp: string;
+  sourceHost: string;
+  requestType: RouterRequestType;
+  protocol: 'UDP' | 'TCP' | 'ICMP';
+  port: number;
+  target: string;
+  sizeBytes: number;
+  summary: string;
+}
+
+export interface DeviceRouterTrafficStats {
+  deviceId: string;
+  totalRequests: number;
+  requestsPerMinute: number;
+  typeCounts: Record<string, number>;
+  lastRequest?: RouterRequestEvent;
+  recentRequests: RouterRequestEvent[];
+}
+
+export interface RouterTrafficSummary {
+  gatewayIp: string;
+  totalRequests: number;
+  requestsPerMinute: number;
+  deviceStats: Record<string, DeviceRouterTrafficStats>;
+  globalTypeCounts: Record<string, number>;
+  recentRequests: RouterRequestEvent[];
 }
 
 export interface TopologyEdge {
@@ -173,12 +219,29 @@ export interface TopologyEdge {
   trafficKbps: number;
   active: boolean;
   protocol?: string;
+  totalRequests?: number;
+  requestsPerMinute?: number;
+  requestTypeCounts?: Record<string, number>;
+  topRequestType?: RouterRequestType;
+  lastRequest?: RouterRequestEvent;
+}
+
+export interface RiskWeights {
+  newDevice: number;
+  portScan: number;
+  unusualHosts: number;
+  unusualDns: number;
+  abnormalTraffic: number;
+  unidentifiedOs: number;
+  trustedBonus: number;
+  baselineBonus: number;
 }
 
 export interface TopologyData {
   nodes: TopologyNode[];
   edges: TopologyEdge[];
   lastUpdated: string;
+  trafficSummary?: RouterTrafficSummary;
 }
 
 export interface SystemStatus {

@@ -223,6 +223,21 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <div className="bg-[#18181B] p-3 rounded-lg border border-[#27272A]">
+            <label className="text-amber-400/90 block text-[11px] mb-1 font-medium">Unidentified OS (+pts)</label>
+            <input
+              type="number"
+              value={(settings.riskWeights as any)?.unidentifiedOs ?? 20}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  riskWeights: { ...settings.riskWeights, unidentifiedOs: parseInt(e.target.value) || 0 } as any,
+                })
+              }
+              className="w-full bg-[#111113] border border-amber-500/30 rounded px-2.5 py-1 text-[#FAFAFA] font-mono"
+            />
+          </div>
+
+          <div className="bg-[#18181B] p-3 rounded-lg border border-[#27272A]">
             <label className="text-[#71717A] block text-[11px] mb-1">Trusted Bonus (-pts)</label>
             <input
               type="number"

@@ -95,24 +95,28 @@ export const Sidebar: React.FC = () => {
         <motion.button
           id="sidebar-logo-toggle"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.94 }}
-          title={isCollapsed ? 'Click logo to expand sidebar' : 'Click logo to collapse sidebar'}
-          className="group relative flex items-center gap-3 p-1 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 transition-colors cursor-pointer"
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.90 }}
+          title={isCollapsed ? 'Click logo to expand side menu' : 'Click logo to collapse side menu to icons'}
+          className="group relative flex items-center gap-3 p-1.5 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 transition-all cursor-pointer"
         >
-          {/* Animated Shield Logo Icon */}
-          <div className="relative w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-700/80 group-hover:border-emerald-500/60 flex items-center justify-center text-zinc-100 shadow-inner group-hover:shadow-[0_0_12px_rgba(16,185,129,0.25)] transition-all duration-300">
-            <Shield className="w-5 h-5 text-emerald-400 transition-transform duration-300 group-hover:rotate-6" />
+          {/* Animated Shield Logo Icon with noticeable pulse and wiggle */}
+          <motion.div
+            animate={isCollapsed ? { rotate: [0, -10, 10, 0] } : {}}
+            transition={{ duration: 0.4 }}
+            className="relative w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-700/80 group-hover:border-emerald-500 flex items-center justify-center text-zinc-100 shadow-inner group-hover:shadow-[0_0_16px_rgba(16,185,129,0.35)] transition-all duration-200"
+          >
+            <Shield className="w-5 h-5 text-emerald-400 transition-all duration-300 group-hover:scale-110 group-hover:text-emerald-300" />
             
-            {/* Collapse indicator micro-arrow pill */}
-            <span
-              className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-600 group-hover:bg-emerald-950 group-hover:border-emerald-500/60 flex items-center justify-center text-zinc-300 group-hover:text-emerald-300 transition-all shadow-sm ${
-                isCollapsed ? 'rotate-180' : ''
-              }`}
+            {/* Collapse indicator micro-arrow pill that animates rotation */}
+            <motion.span
+              animate={{ rotate: isCollapsed ? 180 : 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-600 group-hover:bg-emerald-950 group-hover:border-emerald-500/80 flex items-center justify-center text-zinc-300 group-hover:text-emerald-300 transition-colors shadow-sm"
             >
               <ChevronLeft className="w-2.5 h-2.5" />
-            </span>
-          </div>
+            </motion.span>
+          </motion.div>
 
           {/* Expanded Brand Name & Subnet Label */}
           {!isCollapsed && (

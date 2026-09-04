@@ -6,6 +6,8 @@ import {
   BaselineFeatures,
   TopologyData,
   SystemStatus,
+  RouterRequestEvent,
+  RouterTrafficSummary,
 } from '../types';
 import { api } from '../utils/api';
 
@@ -16,6 +18,8 @@ interface NetworkContextType {
   alerts: Alert[];
   baseline: BaselineFeatures | null;
   topology: TopologyData | null;
+  recentRouterRequests: RouterRequestEvent[];
+  topologyTraffic: RouterTrafficSummary | null;
   selectedDevice: Device | null;
   setSelectedDevice: (device: Device | null) => void;
   quarantineTarget: Device | null;
@@ -46,6 +50,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [baseline, setBaseline] = useState<BaselineFeatures | null>(null);
   const [topology, setTopology] = useState<TopologyData | null>(null);
+  const [recentRouterRequests, setRecentRouterRequests] = useState<RouterRequestEvent[]>([]);
+  const [topologyTraffic, setTopologyTraffic] = useState<RouterTrafficSummary | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [quarantineTarget, setQuarantineTarget] = useState<Device | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -154,6 +160,13 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           break;
         case 'topology.updated':
           setTopology(message.data);
+          break;
+        case 'router.request':
+          setRecentRouterRequests((prev) => [message.data, ...prev.slice(0, 49)]);
+          break;
+        case 'topology.traffic':
+          setTopologyTraffic(message.data);
+          setTopology((prev) => (prev ? { ...prev, trafficSummary: message.data } : prev));
           break;
       }
     }
@@ -310,6 +323,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         alerts,
         baseline,
         topology,
+        recentRouterRequests,
+        topologyTraffic,
         selectedDevice,
         setSelectedDevice,
         quarantineTarget,

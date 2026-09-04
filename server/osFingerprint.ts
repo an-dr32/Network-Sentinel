@@ -4,6 +4,7 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { Device, OpenPort, OsDetectionDetails } from './types';
+import { lookupOuiVendor } from './ouiDatabase';
 
 const execAsync = promisify(exec);
 
@@ -105,6 +106,7 @@ export class OsFingerprintEngine {
         3389: 'ms-wbt-server',
         5000: 'airplay-http',
         5001: 'https-admin',
+        5357: 'wsdapi',
         7000: 'airplay-raop',
         8080: 'http-proxy',
       };
@@ -174,8 +176,9 @@ export class OsFingerprintEngine {
     hasAirplay: boolean;
     hasIpp: boolean;
     hasHttp: boolean;
+    hasWsd: boolean;
   }> {
-    const targetPorts = [22, 53, 80, 135, 445, 631, 3389, 5000, 7000, 8080];
+    const targetPorts = [22, 53, 80, 135, 139, 445, 631, 3389, 5000, 5357, 7000, 8080];
     const results = await Promise.all(
       targetPorts.map((port) => this.probeTcpPort(ip, port, 450))
     );
@@ -188,6 +191,7 @@ export class OsFingerprintEngine {
     let hasAirplay = false;
     let hasIpp = false;
     let hasHttp = false;
+    let hasWsd = false;
 
     for (const r of results) {
       if (r.open) {
@@ -196,14 +200,15 @@ export class OsFingerprintEngine {
           service: r.service,
           protocol: 'tcp',
           state: 'open',
-          riskRating: [135, 445, 3389].includes(r.service as any) ? 'medium' : 'low',
+          riskRating: [135, 139, 445, 3389].includes(r.service as any) ? 'medium' : 'low',
         });
 
         if (r.banner) {
           banners.push(r.banner);
         }
 
-        if (r.service === 'microsoft-ds' || r.service === 'msrpc') hasSmb = true;
+        if (r.service === 'microsoft-ds' || r.service === 'msrpc' || r.service === 'netbios-ssn') hasSmb = true;
+        if (r.service === 'wsdapi') hasWsd = true;
         if (r.service === 'ms-wbt-server') hasRdp = true;
         if (r.service === 'ssh') hasSsh = true;
         if (r.service.includes('airplay')) hasAirplay = true;
@@ -221,6 +226,7 @@ export class OsFingerprintEngine {
       hasAirplay,
       hasIpp,
       hasHttp,
+      hasWsd,
     };
   }
 
@@ -301,16 +307,8 @@ export class OsFingerprintEngine {
       methods.push(`Passive ICMP TTL Inspection (Observed: ${measuredTtl})`);
       if (measuredTtl >= 50 && measuredTtl <= 64) {
         ttlFamily = 'unix';
-        if (!isGateway && confidence < 70) {
-          osGuess = 'Linux / Apple Darwin / Unix Family';
-          confidence = 65;
-        }
       } else if (measuredTtl >= 110 && measuredTtl <= 128) {
         ttlFamily = 'windows';
-        osGuess = 'Microsoft Windows (NT Kernel 10/11)';
-        deviceType = 'workstation';
-        confidence = 78;
-        signatureMatch = 'Windows IP Stack Default TTL 128';
       } else if (measuredTtl >= 240 && measuredTtl <= 255) {
         ttlFamily = 'network';
         if (!isGateway) {
@@ -371,120 +369,115 @@ export class OsFingerprintEngine {
       }
     }
 
-    // Windows Port Signature: SMB (445) / MSRPC (135) / RDP (3389)
-    if (probe.hasSmb || probe.hasRdp) {
-      methods.push('Windows NetBIOS / SMB / RDP Protocol Fingerprint');
-      if (confidence < 90) {
+    // 5. Apple Hardware / Stack Priority Check
+    const vendorLookup = lookupOuiVendor(device.macAddress) || '';
+    const vendorLower = `${device.vendor || ''} ${vendorLookup}`.toLowerCase();
+    const hostLower = (device.hostname || '').toLowerCase();
+
+    const isAppleHardware =
+      vendorLower.includes('apple') ||
+      hostLower.includes('macbook') ||
+      hostLower.includes('imac') ||
+      hostLower.includes('mac-') ||
+      hostLower.includes('apple') ||
+      hostLower.includes('iphone') ||
+      hostLower.includes('ipad') ||
+      probe.hasAirplay;
+
+    if (isAppleHardware) {
+      methods.push('Apple Ecosystem Hardware & Network Stack Correlation');
+      if (hostLower.includes('iphone') || hostLower.includes('ipad')) {
+        osGuess = 'Apple iOS / iPadOS';
+        deviceType = 'smartphone';
+        confidence = 94;
+      } else {
+        osGuess = 'Apple macOS (Darwin)';
+        deviceType = 'laptop';
+        confidence = 94;
+      }
+      signatureMatch = probe.hasAirplay
+        ? 'Apple Bonjour / AirPlay Stack'
+        : 'Apple Hardware OUI & Hostname Signature';
+    } else {
+      // 6. Windows OS Identification
+      const isWindowsCandidate =
+        probe.hasSmb ||
+        probe.hasRdp ||
+        probe.hasWsd ||
+        ttlFamily === 'windows' ||
+        vendorLower.includes('microsoft') ||
+        vendorLower.includes('dell') ||
+        vendorLower.includes('lenovo') ||
+        vendorLower.includes('hewlett-packard') ||
+        vendorLower.includes('hp') ||
+        vendorLower.includes('asus') ||
+        vendorLower.includes('acer') ||
+        vendorLower.includes('intel') ||
+        vendorLower.includes('realtek') ||
+        /^(desktop|laptop|win|pc)-[a-z0-9]+/i.test(hostLower) ||
+        /.*-pc$/i.test(hostLower) ||
+        hostLower.includes('windows');
+
+      if (isWindowsCandidate && confidence < 90) {
+        methods.push('Microsoft Windows Network Stack / RPC / NetBIOS Correlation');
         if (probe.hasRdp) {
           osGuess = 'Microsoft Windows 10/11 Pro / Enterprise (RDP Active)';
         } else {
-          osGuess = 'Microsoft Windows 10/11 (SMB/MSRPC Active)';
+          osGuess = 'Microsoft Windows 10/11';
         }
         deviceType = 'workstation';
         confidence = 88;
-        signatureMatch = 'Active Windows Core RPC & SMB Ports (445/135/3389)';
-      }
-    }
-
-    // Apple Port Signature: AirPlay / RAOP (5000/7000)
-    if (probe.hasAirplay) {
-      methods.push('Apple AirPlay / RAOP Bonjour Stack Fingerprint');
-      osGuess = 'Apple macOS / iOS (AirPlay Active)';
-      deviceType = 'laptop';
-      confidence = Math.max(confidence, 88);
-      signatureMatch = 'AirPlay Daemon Listening on Ports 5000/7000';
-    }
-
-    // Printer CUPS / IPP Signature: 631
-    if (probe.hasIpp && (device.vendor.includes('Brother') || device.vendor.includes('HP') || device.vendor.includes('Canon'))) {
-      methods.push('Internet Printing Protocol (IPP/CUPS) Fingerprint');
-      osGuess = `${device.vendor} Embedded Printer OS`;
-      deviceType = 'iot';
-      confidence = 90;
-      signatureMatch = 'IPP/CUPS Daemon Port 631';
-    }
-
-    // 5. Vendor OUI Correlation
-    const vendorLower = (device.vendor || '').toLowerCase();
-    if (vendorLower.includes('apple')) {
-      methods.push('Hardware OUI Vendor Correlation (Apple, Inc.)');
-      if (ttlFamily === 'unix' || confidence < 80) {
-        const hostLower = (device.hostname || '').toLowerCase();
-        if (hostLower.includes('macbook') || hostLower.includes('mac') || hostLower.includes('imac')) {
-          osGuess = 'Apple macOS (Darwin)';
-          deviceType = 'laptop';
-          confidence = Math.max(confidence, 86);
-        } else if (hostLower.includes('iphone') || hostLower.includes('ipad')) {
-          osGuess = 'Apple iOS / iPadOS';
+        signatureMatch = probe.hasWsd
+          ? 'Windows Web Services Discovery (WSDAPI 5357)'
+          : probe.hasSmb
+          ? 'Active Windows NetBIOS / SMB / MSRPC Stack'
+          : ttlFamily === 'windows'
+          ? 'Windows TCP/IP Stack Default TTL 128'
+          : 'Windows PC Vendor / Hostname Heuristic';
+      } else if (!isGateway && confidence < 75) {
+        // 7. Linux / Unix Identification
+        if (ttlFamily === 'unix' && probe.hasSsh) {
+          methods.push('Linux / Unix SSH Stack Correlation');
+          osGuess = 'Linux OS (Linux Kernel)';
+          deviceType = 'server';
+          confidence = 85;
+          signatureMatch = 'OpenSSH Server on TTL 64 Stack';
+        } else if (vendorLower.includes('synology')) {
+          methods.push('Hardware OUI Vendor Correlation (Synology Inc.)');
+          osGuess = 'Synology DiskStation Manager (DSM / Linux)';
+          deviceType = 'server';
+          confidence = 90;
+        } else if (vendorLower.includes('raspberry')) {
+          methods.push('Hardware OUI Vendor Correlation (Raspberry Pi)');
+          osGuess = 'Raspberry Pi OS (Linux ARM)';
+          deviceType = 'iot';
+          confidence = 88;
+        } else if (vendorLower.includes('espressif')) {
+          methods.push('Hardware OUI Vendor Correlation (Espressif IoT)');
+          osGuess = 'FreeRTOS / ESP-IDF (Embedded Microcontroller)';
+          deviceType = 'iot';
+          confidence = 90;
+        } else if (hostLower.includes('android') || hostLower.includes('galaxy') || hostLower.includes('pixel')) {
+          osGuess = 'Android OS (Linux Kernel)';
           deviceType = 'smartphone';
-          confidence = Math.max(confidence, 86);
-        } else if (confidence < 75) {
-          osGuess = 'Apple macOS / iOS (Darwin Kernel)';
-          confidence = 78;
+          confidence = 84;
+          methods.push(`Hostname Pattern Matching ("${device.hostname}")`);
+        } else if (probe.hasIpp && (vendorLower.includes('brother') || vendorLower.includes('hp') || vendorLower.includes('canon'))) {
+          methods.push('Internet Printing Protocol (IPP/CUPS) Fingerprint');
+          osGuess = `${device.vendor || 'Network'} Embedded Printer OS`;
+          deviceType = 'printer';
+          confidence = 90;
+          signatureMatch = 'IPP/CUPS Daemon Port 631';
         }
       }
-    } else if (vendorLower.includes('microsoft')) {
-      methods.push('Hardware OUI Vendor Correlation (Microsoft Corporation)');
-      osGuess = 'Microsoft Windows';
-      deviceType = 'workstation';
-      confidence = Math.max(confidence, 85);
-    } else if (vendorLower.includes('synology')) {
-      methods.push('Hardware OUI Vendor Correlation (Synology Inc.)');
-      osGuess = 'Synology DiskStation Manager (DSM / Linux)';
-      deviceType = 'server';
-      confidence = Math.max(confidence, 90);
-    } else if (vendorLower.includes('raspberry')) {
-      methods.push('Hardware OUI Vendor Correlation (Raspberry Pi)');
-      osGuess = 'Raspberry Pi OS (Linux ARM)';
-      deviceType = 'iot';
-      confidence = Math.max(confidence, 88);
-    } else if (vendorLower.includes('espressif')) {
-      methods.push('Hardware OUI Vendor Correlation (Espressif IoT)');
-      osGuess = 'FreeRTOS / ESP-IDF (Embedded Microcontroller)';
-      deviceType = 'iot';
-      confidence = Math.max(confidence, 90);
-    } else if (vendorLower.includes('nest') || vendorLower.includes('google')) {
-      methods.push('Hardware OUI Vendor Correlation (Google / Nest Labs)');
-      if (device.hostname?.includes('cam') || device.hostname?.includes('nest')) {
-        osGuess = 'Embedded Linux (Nest OS)';
-        deviceType = 'iot';
-      } else {
-        osGuess = 'Android / ChromeOS (Google)';
-        deviceType = 'smartphone';
-      }
-      confidence = Math.max(confidence, 80);
-    } else if (vendorLower.includes('mikrotik')) {
-      methods.push('Hardware OUI Vendor Correlation (MikroTik RouterBOARD)');
-      osGuess = 'MikroTik RouterOS';
-      deviceType = 'router';
-      confidence = Math.max(confidence, 95);
     }
 
-    // 6. Hostname Pattern Heuristics
-    const host = (device.hostname || '').toLowerCase();
-    if (host) {
-      if (host.includes('macbook') || host.includes('mac-') || host.includes('imac')) {
-        if (!osGuess.includes('macOS')) osGuess = 'Apple macOS (Darwin)';
-        deviceType = 'laptop';
-        confidence = Math.max(confidence, 82);
-        methods.push(`Hostname Pattern Matching ("${device.hostname}")`);
-      } else if (host.includes('desktop-') || host.includes('win-') || host.includes('laptop-')) {
-        if (!osGuess.includes('Windows')) osGuess = 'Microsoft Windows 10/11';
-        deviceType = 'workstation';
-        confidence = Math.max(confidence, 80);
-        methods.push(`Hostname Pattern Matching ("${device.hostname}")`);
-      } else if (host.includes('android') || host.includes('galaxy') || host.includes('pixel')) {
-        osGuess = 'Android OS (Linux Kernel)';
-        deviceType = 'smartphone';
-        confidence = Math.max(confidence, 84);
-        methods.push(`Hostname Pattern Matching ("${device.hostname}")`);
-      }
-    }
-
-    // Default fallback
-    if (confidence < 50) {
-      osGuess = 'Generic IP Device';
-      confidence = 35;
+    // 8. Undetected OS Fallback
+    if (confidence < 50 || !osGuess || osGuess === 'Unknown OS') {
+      osGuess = 'Unidentified Operating System';
+      confidence = 30;
+      signatureMatch = 'Unidentified Operating System (Flagged for Security Review)';
+      methods.push('OS Signature Analysis Inconclusive');
     }
 
     return {

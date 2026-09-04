@@ -10,6 +10,7 @@ import { responseAdapter } from './server/response';
 import { collectorManager } from './server/collectors/collectorManager';
 import { securityLabEngine } from './server/securityLab';
 import { osFingerprintEngine } from './server/osFingerprint';
+import { trafficMonitor } from './server/trafficMonitor';
 import { SystemStatus, TopologyData, TopologyNode, TopologyEdge, NetworkEvent } from './server/types';
 
 const PORT = 3000;
@@ -72,8 +73,15 @@ async function startServer() {
     broadcast('system.status', getSystemStatus());
   });
 
-  // Start background collector
+  // Start background collector & real-time router request monitor
   await collectorManager.start();
+  trafficMonitor.start();
+
+  // Broadcast real-time router interactions to WebSocket clients
+  trafficMonitor.onRouterRequest((reqEvent, summary) => {
+    broadcast('router.request', reqEvent);
+    broadcast('topology.traffic', summary);
+  });
 
   function getSystemStatus(): SystemStatus {
     const devices = db.getDevices();
@@ -102,11 +110,14 @@ async function startServer() {
 
   function generateTopologyData(): TopologyData {
     const devices = db.getDevices();
+    const trafficSummary = trafficMonitor.getTrafficSummary();
+
     if (devices.length === 0) {
       return {
         nodes: [],
         edges: [],
         lastUpdated: new Date().toISOString(),
+        trafficSummary,
       };
     }
 
@@ -126,6 +137,8 @@ async function startServer() {
 
     for (const d of devices) {
       const isGateway = d.id === hubId;
+      const deviceReqStats = trafficSummary.deviceStats[d.id];
+
       nodes.push({
         id: d.id,
         label: d.hostname || d.currentIp,
@@ -139,9 +152,21 @@ async function startServer() {
         deviceType: isGateway ? 'router' : d.deviceType,
         vendor: d.vendor,
         quarantined: d.quarantined,
+        routerTraffic: deviceReqStats,
       });
 
       if (!isGateway) {
+        let topType: any = undefined;
+        let topCount = 0;
+        if (deviceReqStats?.typeCounts) {
+          for (const [t, c] of Object.entries(deviceReqStats.typeCounts)) {
+            if (c > topCount) {
+              topCount = c;
+              topType = t;
+            }
+          }
+        }
+
         edges.push({
           id: `edge_${hubId}_${d.id}`,
           source: hubId,
@@ -149,6 +174,11 @@ async function startServer() {
           trafficKbps: d.trafficStats?.rateKbps || 0,
           active: d.status === 'online' && !d.quarantined,
           protocol: d.openPorts && d.openPorts.length > 0 ? d.openPorts[0].service.toUpperCase() : 'IP',
+          totalRequests: deviceReqStats?.totalRequests || 0,
+          requestsPerMinute: deviceReqStats?.requestsPerMinute || 0,
+          requestTypeCounts: deviceReqStats?.typeCounts || {},
+          topRequestType: topType,
+          lastRequest: deviceReqStats?.lastRequest,
         });
       }
     }
@@ -157,6 +187,7 @@ async function startServer() {
       nodes,
       edges,
       lastUpdated: new Date().toISOString(),
+      trafficSummary,
     };
   }
 
@@ -263,6 +294,16 @@ async function startServer() {
   // Topology Graph Data
   app.get('/api/topology', (req, res) => {
     res.json(generateTopologyData());
+  });
+
+  // Real-Time Router Interaction Telemetry
+  app.get('/api/topology/traffic', (req, res) => {
+    res.json(trafficMonitor.getTrafficSummary());
+  });
+
+  app.post('/api/topology/record-request', (req, res) => {
+    const event = trafficMonitor.recordRequest(req.body);
+    res.json(event);
   });
 
   // Baseline Learning

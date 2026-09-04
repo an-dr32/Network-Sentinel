@@ -48,6 +48,7 @@ const INITIAL_SETTINGS = {
     unusualHosts: 20,
     unusualDns: 10,
     abnormalTraffic: 15,
+    unidentifiedOs: 20,
     trustedBonus: 20,
     baselineBonus: 10,
   },

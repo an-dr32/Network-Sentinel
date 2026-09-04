@@ -61,14 +61,59 @@ export const DevicesView: React.FC = () => {
       const matchesRisk = riskFilter === 'all' || d.riskSeverity === riskFilter;
 
       // OS family filter
-      const osLower = osGuess.toLowerCase();
+      const osLower = (d.osGuess || '').toLowerCase();
+      const vendorLower = (d.vendor || '').toLowerCase();
+      const isApple =
+        osLower.includes('apple') ||
+        osLower.includes('macos') ||
+        osLower.includes('ios') ||
+        osLower.includes('darwin') ||
+        vendorLower.includes('apple');
+
+      const isWindows =
+        !isApple &&
+        (osLower.includes('windows') ||
+          osLower.includes('microsoft') ||
+          /\bwin\b/i.test(osLower) ||
+          vendorLower.includes('microsoft') ||
+          vendorLower.includes('dell') ||
+          vendorLower.includes('lenovo') ||
+          vendorLower.includes('hewlett-packard'));
+
+      const isLinux =
+        !isApple &&
+        !isWindows &&
+        (osLower.includes('linux') ||
+          osLower.includes('ubuntu') ||
+          osLower.includes('debian') ||
+          osLower.includes('arch') ||
+          osLower.includes('fedora') ||
+          osLower.includes('raspberry') ||
+          osLower.includes('unix'));
+
+      const isRouter =
+        d.deviceType === 'router' ||
+        osLower.includes('router') ||
+        osLower.includes('mikrotik') ||
+        osLower.includes('cisco') ||
+        osLower.includes('gateway') ||
+        osLower.includes('openwrt');
+
+      const isUnidentified =
+        !d.osGuess ||
+        d.osGuess === 'Unknown OS' ||
+        d.osGuess.toLowerCase().includes('unknown') ||
+        d.osGuess.toLowerCase().includes('unidentified') ||
+        d.osGuess.toLowerCase().includes('generic') ||
+        (d.osConfidence !== undefined && d.osConfidence < 50);
+
       const matchesOs =
         osFilter === 'all' ||
-        (osFilter === 'apple' && (osLower.includes('apple') || osLower.includes('macos') || osLower.includes('darwin') || osLower.includes('ios'))) ||
-        (osFilter === 'windows' && (osLower.includes('windows') || osLower.includes('microsoft') || osLower.includes('win'))) ||
-        (osFilter === 'linux' && (osLower.includes('linux') || osLower.includes('ubuntu') || osLower.includes('debian') || osLower.includes('arch') || osLower.includes('fedora'))) ||
-        (osFilter === 'router' && (osLower.includes('router') || osLower.includes('mikrotik') || osLower.includes('cisco') || osLower.includes('gateway') || d.deviceType === 'router')) ||
-        (osFilter === 'unidentified' && (!d.osGuess || d.osGuess === 'Unknown OS' || d.osGuess.includes('Unknown')));
+        (osFilter === 'apple' && isApple) ||
+        (osFilter === 'windows' && isWindows) ||
+        (osFilter === 'linux' && isLinux) ||
+        (osFilter === 'router' && isRouter) ||
+        (osFilter === 'unidentified' && isUnidentified);
 
       return matchesSearch && matchesTrust && matchesRisk && matchesOs;
     });

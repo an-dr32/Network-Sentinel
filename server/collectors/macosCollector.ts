@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { NetworkCollector } from './collector.interface';
 import { Device, NetworkEvent } from '../types';
 import { db } from '../db';
+import { lookupOuiVendor } from '../ouiDatabase';
 
 const execAsync = promisify(exec);
 
@@ -74,7 +75,7 @@ export class MacosCollector implements NetworkCollector {
             id: `dev_${mac.replace(/:/g, '')}`,
             macAddress: mac,
             hostname: hostName,
-            vendor: this.lookupVendor(mac) || 'Apple, Inc.',
+            vendor: 'Apple, Inc.',
             ipAddresses: [hostIp],
             currentIp: hostIp,
             ipHistory: [{ ip: hostIp, firstSeen: now, lastSeen: now, leaseType: 'dhcp' }],
@@ -85,6 +86,8 @@ export class MacosCollector implements NetworkCollector {
             riskScore: 0,
             riskSeverity: 'normal',
             deviceType: 'laptop',
+            osGuess: 'Apple macOS (Darwin)',
+            osConfidence: 98,
             openPorts: [],
             riskEvidence: [],
             quarantined: false,
@@ -241,25 +244,7 @@ export class MacosCollector implements NetworkCollector {
   }
 
   private lookupVendor(mac: string): string {
-    const prefix = mac.toLowerCase().substring(0, 8);
-    const vendorMap: Record<string, string> = {
-      'd4:ca:6d': 'MikroTik',
-      '3c:22:fb': 'Apple, Inc.',
-      '00:11:32': 'Synology Incorporated',
-      '18:b4:30': 'Nest Labs (Google)',
-      '00:1e:c9': 'Brother Industries, Ltd.',
-      'b8:27:eb': 'Raspberry Pi Foundation',
-      'dc:a6:32': 'Raspberry Pi Trading',
-      'ac:bc:32': 'Apple, Inc.',
-      'f4:f5:e8': 'Google LLC',
-      '50:c7:bf': 'TP-Link Corporation',
-      '00:0c:29': 'VMware, Inc.',
-      '08:00:27': 'Oracle VirtualBox',
-      'f0:18:98': 'Apple, Inc.',
-      'a4:83:e7': 'Apple, Inc.',
-      '40:6c:8f': 'Apple, Inc.',
-    };
-    return vendorMap[prefix] || 'Generic Network Interface';
+    return lookupOuiVendor(mac) || 'Generic Network Interface';
   }
 }
 

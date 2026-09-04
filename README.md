@@ -193,16 +193,21 @@ Baseline mode allows Network Sentinel to learn the normal behavior of your subne
 - Displays hardware vendor lookup (Apple, MikroTik, Synology, Nest, etc.), active IP, lease counts, and risk score badges.
 - One-click **Inspect**, **Quarantine**, or **Restore** action buttons.
 
-### 3. Interactive 2D Subnet Topology
+### 3. Interactive 2D Subnet Topology & Real-Time Router Request Tracking
 - Visualizes WAN Gateway, Router (`192.168.1.1`), and connected device nodes in an interactive radial tree layout.
 - Zoom in, zoom out, and reset canvas controls.
+- **Real-Time Machine-to-Router Request Tracking**:
+  - **Quantity of Requests**: Link midpoints and node badges display the exact number of requests each machine has made to the router (e.g. `48 req • DNS`, `⚡54`).
+  - **Request Types & Protocols**: Shows what type of requests devices are issuing (DNS resolution, HTTPS web transit, NTP clock synchronization, DHCP renews, mDNS discovery, and ICMP keepalive).
+  - **Animated Bi-Directional Request Pulses**: Glowing visual particles travel from machines to the router upon each request, with return pulses for replies.
+  - **Protocol Filter Bar**: Filter topology activity by request protocol (`ALL`, `DNS`, `HTTPS`, `NTP`, `ICMP`) or toggle pulse animations.
+- **Node & Router Telemetry Inspector**: Clicking any machine displays its total router interaction volume, request rate (reqs/min), protocol distribution breakdown, and full details of the latest request.
+- **Live Streaming Telemetry Ticker**: Bottom log table streams real-time router requests with timestamps, source machine, protocol, port, packet size, and request summary.
 - **Dynamic Link Color Coding**:
   - Green: Normal traffic
   - Amber: Suspicious activity
   - Red: Critical threat or isolated node
   - Dashed Red: Quarantined node (traffic blocked)
-- **Real-Time Data Pulses**: Animated particle packets flow along links when devices transmit data.
-- **Node Inspector**: Clicking any node opens a sidebar panel detailing IP, MAC, vendor, trust level, risk score, and open listening ports.
 
 ### 4. Activity & Syslog Audit Log
 - Live stream of network events powered by WebSockets.
