@@ -21,6 +21,9 @@ Network Sentinel is a high-contrast, privacy-first network security console desi
   - [5. Security Alerts Console](#5-security-alerts-console)
   - [6. Security Laboratory (`[SIMULATED]`)](#6-security-laboratory-simulated)
   - [7. Settings & Collector Configuration](#7-settings--collector-configuration)
+- [Header & Side Menu Controls Reference](#header--side-menu-controls-reference)
+  - [Top Header Controls (Monitoring Mode, Demo Lab, Scan Subnet, etc.)](#top-header-controls)
+  - [Side Menu Controls & Animated Collapsible Logo](#side-menu-controls--animated-collapsible-logo)
 - [How to Use the App](#how-to-use-the-app)
   - [Cloud Sandbox / Demo Mode](#cloud-sandbox--demo-mode)
   - [Guided 5-Step Hackathon Demo](#guided-5-step-hackathon-demo)
@@ -230,6 +233,39 @@ A dedicated, clearly labeled testbed for testing detection rules and demonstrati
 - **Risk Weight Sliders**: Adjust point values for all 7 detection rules.
 - **Data Export**: Export complete database (devices, alerts, events) to a formatted JSON audit file.
 - **Reset Database**: Clears local data store back to baseline defaults.
+
+---
+
+## Header & Side Menu Controls Reference
+
+### Top Header Controls
+
+The top navigation header houses real-time operational status indicators and quick-action triggers accessible from any view:
+
+| Button / Control | Visual State & Icon | Action & Functionality |
+|---|---|---|
+| **Monitoring Mode / Baseline Learning** | Green Checkmark (`CheckCircle2`) or Amber Pulsing Badge (`BookOpen`) | **Baseline Training & Calibration**: <br>• **Default State ("Monitoring Mode")**: Indicates Sentinel is actively evaluating network activity against established statistical baselines.<br>• **Click Action**: Kicks off a 15-second baseline learning cycle (`POST /api/baseline/start-learning`).<br>• **Active Training State ("Learning Baseline (X%)")**: Shows real-time progress as the engine profiles normal IP-to-MAC pairings, routine throughput, and listening ports.<br>• **Result**: Upon completion, all compliant nodes receive an automatic `-10 pt` baseline bonus, reducing false positives. |
+| **Demo Lab** | Amber Sparkles (`Sparkles`) | **Instant Sandbox Access**: <br>• Provides a direct 1-click shortcut to the **Security Demonstration Laboratory** (`security-lab`).<br>• Enables rapid execution of the guided 5-step incident sequence and controlled threat injection scenarios without navigating through menu trees. |
+| **Scan Subnet** | Radar Scanner (`Radar`) with animated rotation | **Immediate Discovery Sweep**: <br>• Triggers an on-demand active/passive subnet discovery pass (`POST /api/discovery/scan`).<br>• Queries the active collector driver (macOS `arp -an`, Linux `/proc/net/arp`, or Security Lab mock driver).<br>• Refreshes discovered hosts, IP bindings, and TCP/IP OS fingerprints across the inventory and topology map.<br>• The radar icon spins continuously during discovery to provide clear visual execution feedback. |
+| **LIVE / POLLING Connection Badge** | Green Wi-Fi (`Wifi`) or Gray Disconnected (`WifiOff`) | **WebSocket Health Indicator**: <br>• Displays `LIVE` with an emerald indicator when connected to `ws://localhost:3000/ws` for real-time telemetry streaming.<br>• Automatically transitions to `POLLING` if WebSockets are unavailable, falling back to periodic REST polling. |
+
+---
+
+### Side Menu Controls & Animated Collapsible Logo
+
+The left sidebar provides access to all primary monitoring modules, incident response tools, and system diagnostics:
+
+| Button / Control | Icon & Indicator | Action & Functionality |
+|---|---|---|
+| **Top-Left Animated Shield Logo (Collapse / Expand)** | Emerald Shield (`Shield`) with micro-chevron indicator | **Animated Sidebar Toggle**: <br>• **Click Action**: Smoothly collapses the sidebar from expanded width (`256px`) down to a compact icon-only view (`72px`), maximizing screen space for wide topology graphs and dense device tables.<br>• **Micro-Interactions & Animations**: Hovering triggers an interactive scale bounce (`scale-105`), an emerald glow halo (`shadow-[0_0_12px_rgba(16,185,129,0.25)]`), and a subtle shield rotation. The mini-chevron flips 180° when toggled.<br>• **Collapsed State**: Nav items switch to centered icon-only view with native hover tooltips and compact notification badge dots. Click the logo again to restore the full sidebar.<br>• State persists in browser `localStorage`. |
+| **Overview** | `LayoutDashboard` | **Mission Control Dashboard**: <br>• Opens the primary executive view displaying subnet asset totals, online node counts, active alerts, and overall subnet threat score.<br>• Houses the **Explainable Threat Matrix** and **High-Risk Device Spotlight**. |
+| **Devices** | `Server` with numeric count badge | **Subnet Inventory & Identity Registry**: <br>• Displays the complete inventory of discovered network assets.<br>• Badge shows total registered devices; turns amber if suspicious or critical nodes are present.<br>• Features Table and Card views, search bar, OS family filters, and batch "Fingerprint All OS" probing. |
+| **Topology** | `Network` | **Interactive 2D Subnet Map**: <br>• Renders an interactive vector graph of the WAN Gateway, router, and connected endpoints.<br>• Features real-time animated data throughput pulses along communication links and a node inspection drawer. |
+| **Activity Stream** | `Activity` | **Real-Time Syslog & Audit Log**: <br>• Chronological live feed of observed network events (new devices, IP changes, TCP port scans, DNS queries, and firewall quarantine responses).<br>• Expandable raw JSON evidence payload inspector for forensic analysis. |
+| **Security Alerts** | `AlertTriangle` with unread alert badge | **Incident Triage Console**: <br>• Displays active and resolved alerts with itemized "Why am I seeing this alert?" explanations.<br>• Prominent red badge indicates the number of unresolved active threats.<br>• Includes 1-click **Investigate Node** navigation to inspect the offending device. |
+| **Security Lab** | `FlaskConical` with `[SIMULATED]` tag | **Incident Response Demonstration Testbed**: <br>• Controlled simulation sandbox for testing detection rules and demonstrations.<br>• Contains the **5-Step Guided Hackathon Demo Sequence** and individual anomaly injection buttons (Rogue Device, Port Scan, DNS Tunneling, Traffic Spike, Dynamic IP Shift). |
+| **Settings** | `Settings` | **Collector & Detection Configuration**: <br>• Configure subnet CIDR ranges (`192.168.1.0/24`) and physical network interfaces (`en0`, `eth0`).<br>• Switch collector drivers (macOS, Linux, Mock).<br>• Adjust detection engine point weights and export the entire audit database to a timestamped JSON file. |
+| **Passive Collector Footer** | Animated green heartbeat pulse dot | **Hardware Collector Telemetry**: <br>• Shows the active driver (`mock`, `macos_arp`, `linux_arp`), network interface, and count of active online devices.<br>• In collapsed mode, condenses to a centered pulsing heartbeat with a detailed hover tooltip. |
 
 ---
 

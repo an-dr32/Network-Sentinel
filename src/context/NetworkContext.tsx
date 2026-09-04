@@ -33,6 +33,8 @@ interface NetworkContextType {
   runSecurityLabScenario: (scenario: 'new_device' | 'port_scan' | 'dns_anomaly' | 'traffic_spike' | 'ip_change', payload?: any) => Promise<any>;
   resetSecurityLab: () => Promise<void>;
   triggerDiscoveryScan: () => Promise<void>;
+  detectDeviceOs: (deviceId: string) => Promise<{ device: Device; fingerprint: any }>;
+  detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
@@ -287,6 +289,18 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await refreshAll();
   };
 
+  const detectDeviceOs = async (deviceId: string) => {
+    const res = await api.detectDeviceOs(deviceId);
+    await refreshAll();
+    return res;
+  };
+
+  const detectAllDevicesOs = async () => {
+    const res = await api.detectAllDevicesOs();
+    await refreshAll();
+    return res;
+  };
+
   return (
     <NetworkContext.Provider
       value={{
@@ -313,6 +327,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         runSecurityLabScenario,
         resetSecurityLab,
         triggerDiscoveryScan,
+        detectDeviceOs,
+        detectAllDevicesOs,
       }}
     >
       {children}

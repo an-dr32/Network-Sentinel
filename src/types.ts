@@ -61,6 +61,8 @@ export interface Device {
   riskSeverity: RiskSeverity;
   tags: string[];
   osGuess?: string;
+  osConfidence?: number;
+  osDetectionDetails?: OsDetectionDetails;
   deviceType: 'router' | 'workstation' | 'laptop' | 'smartphone' | 'iot' | 'server' | 'unknown';
   openPorts: OpenPort[];
   activeConnections?: DeviceConnection[];
@@ -81,6 +83,15 @@ export interface Device {
   };
 }
 
+export interface OsDetectionDetails {
+  ttl?: number;
+  methods: string[];
+  confidence: number;
+  fingerprintedAt: string;
+  identifiedBanners?: string[];
+  signatureMatch?: string;
+}
+
 export type NetworkEventType =
   | 'device_discovered'
   | 'device_offline'
@@ -90,7 +101,8 @@ export type NetworkEventType =
   | 'traffic_anomaly'
   | 'risk_changed'
   | 'response'
-  | 'system_info';
+  | 'system_info'
+  | 'os_fingerprinted';
 
 export interface NetworkEvent {
   id: string;

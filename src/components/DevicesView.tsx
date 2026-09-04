@@ -15,18 +15,23 @@ import {
   Printer,
   Ban,
   RotateCcw,
+  Fingerprint,
+  RefreshCw,
 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
 import { Device, DeviceTrustStatus, RiskSeverity } from '../types';
-import { formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses } from '../utils/formatters';
+import { formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses, getOsBadgeInfo } from '../utils/formatters';
 
 export const DevicesView: React.FC = () => {
-  const { devices, setSelectedDevice, setQuarantineTarget, triggerRestore } = useNetwork();
+  const { devices, setSelectedDevice, setQuarantineTarget, triggerRestore, detectDeviceOs, detectAllDevicesOs } = useNetwork();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [trustFilter, setTrustFilter] = useState<string>('all');
   const [riskFilter, setRiskFilter] = useState<string>('all');
+  const [osFilter, setOsFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [isDetectingAll, setIsDetectingAll] = useState(false);
+  const [detectingDeviceId, setDetectingDeviceId] = useState<string | null>(null);
 
   const filteredDevices = useMemo(() => {
     return devices.filter((d) => {
@@ -35,6 +40,7 @@ export const DevicesView: React.FC = () => {
       const currentIp = d.currentIp || '';
       const macAddress = d.macAddress || '';
       const vendor = d.vendor || '';
+      const osGuess = d.osGuess || '';
       const tags = Array.isArray(d.tags) ? d.tags : [];
       const query = searchQuery.toLowerCase();
 
@@ -45,6 +51,7 @@ export const DevicesView: React.FC = () => {
         currentIp.includes(query) ||
         macAddress.toLowerCase().includes(query) ||
         vendor.toLowerCase().includes(query) ||
+        osGuess.toLowerCase().includes(query) ||
         tags.some((t) => t && t.toLowerCase().includes(query));
 
       // Trust status filter
@@ -53,9 +60,19 @@ export const DevicesView: React.FC = () => {
       // Risk level filter
       const matchesRisk = riskFilter === 'all' || d.riskSeverity === riskFilter;
 
-      return matchesSearch && matchesTrust && matchesRisk;
+      // OS family filter
+      const osLower = osGuess.toLowerCase();
+      const matchesOs =
+        osFilter === 'all' ||
+        (osFilter === 'apple' && (osLower.includes('apple') || osLower.includes('macos') || osLower.includes('darwin') || osLower.includes('ios'))) ||
+        (osFilter === 'windows' && (osLower.includes('windows') || osLower.includes('microsoft') || osLower.includes('win'))) ||
+        (osFilter === 'linux' && (osLower.includes('linux') || osLower.includes('ubuntu') || osLower.includes('debian') || osLower.includes('arch') || osLower.includes('fedora'))) ||
+        (osFilter === 'router' && (osLower.includes('router') || osLower.includes('mikrotik') || osLower.includes('cisco') || osLower.includes('gateway') || d.deviceType === 'router')) ||
+        (osFilter === 'unidentified' && (!d.osGuess || d.osGuess === 'Unknown OS' || d.osGuess.includes('Unknown')));
+
+      return matchesSearch && matchesTrust && matchesRisk && matchesOs;
     });
-  }, [devices, searchQuery, trustFilter, riskFilter]);
+  }, [devices, searchQuery, trustFilter, riskFilter, osFilter]);
 
   const getDeviceIcon = (deviceType: string) => {
     switch (deviceType) {
@@ -123,6 +140,40 @@ export const DevicesView: React.FC = () => {
             <option value="critical">Critical (80-100)</option>
           </select>
 
+          {/* OS Family Filter */}
+          <select
+            id="os-filter-select"
+            value={osFilter}
+            onChange={(e) => setOsFilter(e.target.value)}
+            className="bg-[#18181B] border border-[#27272A] text-xs text-[#FAFAFA] rounded-md px-2.5 py-2 focus:outline-none focus:border-zinc-500 font-mono"
+          >
+            <option value="all">All OS Families</option>
+            <option value="apple">Apple (macOS/Darwin)</option>
+            <option value="windows">Microsoft Windows</option>
+            <option value="linux">Linux / Unix</option>
+            <option value="router">Routers / Gateways</option>
+            <option value="unidentified">Unidentified OS</option>
+          </select>
+
+          {/* Batch Fingerprint All Button */}
+          <button
+            id="btn-detect-all-os"
+            onClick={async () => {
+              setIsDetectingAll(true);
+              try {
+                await detectAllDevicesOs();
+              } finally {
+                setIsDetectingAll(false);
+              }
+            }}
+            disabled={isDetectingAll}
+            className="flex items-center gap-1.5 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-emerald-400 rounded-md border border-zinc-700 text-xs transition-colors font-mono"
+            title="Perform passive TTL and active port probe fingerprinting on all subnet devices"
+          >
+            <Fingerprint className={`w-3.5 h-3.5 ${isDetectingAll ? 'animate-spin' : ''}`} />
+            <span>{isDetectingAll ? 'Fingerprinting...' : 'Fingerprint All OS'}</span>
+          </button>
+
           {/* Toggle View Mode */}
           <div className="flex items-center bg-[#18181B] p-0.5 rounded-md border border-[#27272A]">
             <button
@@ -164,6 +215,7 @@ export const DevicesView: React.FC = () => {
                   <th className="px-4 py-3">Hostname & Vendor</th>
                   <th className="px-3 py-3">Current IP</th>
                   <th className="px-3 py-3">Hardware MAC</th>
+                  <th className="px-3 py-3">OS Stack</th>
                   <th className="px-3 py-3">Trust State</th>
                   <th className="px-3 py-3">Last Active</th>
                   <th className="px-3 py-3">Risk Tier</th>
@@ -173,7 +225,7 @@ export const DevicesView: React.FC = () => {
               <tbody className="divide-y divide-[#27272A]">
                 {filteredDevices.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-[#71717A]">
+                    <td colSpan={9} className="p-8 text-center text-[#71717A]">
                       No devices match current filters.
                     </td>
                   </tr>
@@ -182,6 +234,7 @@ export const DevicesView: React.FC = () => {
                     const Icon = getDeviceIcon(device.deviceType);
                     const riskStyle = getRiskBadgeClasses(device.riskSeverity);
                     const trustStyle = getTrustStatusClasses(device.trustStatus);
+                    const osInfo = getOsBadgeInfo(device.osGuess);
                     return (
                       <tr
                         key={device.id}
@@ -225,6 +278,39 @@ export const DevicesView: React.FC = () => {
                         {/* MAC Address */}
                         <td className="px-3 py-3.5 font-mono text-[#71717A] text-[11px]">
                           {device.macAddress}
+                        </td>
+
+                        {/* OS Stack */}
+                        <td className="px-3 py-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono border truncate max-w-[130px] ${osInfo.bg} ${osInfo.text} ${osInfo.border}`}
+                              title={device.osGuess || 'Unidentified OS'}
+                            >
+                              {device.osGuess || 'Unidentified'}
+                            </span>
+                            {device.osConfidence !== undefined && (
+                              <span className="text-[10px] font-mono text-zinc-400">
+                                {device.osConfidence}%
+                              </span>
+                            )}
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setDetectingDeviceId(device.id);
+                                try {
+                                  await detectDeviceOs(device.id);
+                                } finally {
+                                  setDetectingDeviceId(null);
+                                }
+                              }}
+                              disabled={detectingDeviceId === device.id}
+                              className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-emerald-400 rounded transition-colors"
+                              title="Run OS fingerprint probe on this device"
+                            >
+                              <Fingerprint className={`w-3.5 h-3.5 ${detectingDeviceId === device.id ? 'animate-spin text-emerald-400' : ''}`} />
+                            </button>
+                          </div>
                         </td>
 
                         {/* Trust State */}
@@ -292,6 +378,7 @@ export const DevicesView: React.FC = () => {
             const Icon = getDeviceIcon(device.deviceType);
             const riskStyle = getRiskBadgeClasses(device.riskSeverity);
             const trustStyle = getTrustStatusClasses(device.trustStatus);
+            const osInfo = getOsBadgeInfo(device.osGuess);
             return (
               <div
                 key={device.id}
@@ -328,6 +415,17 @@ export const DevicesView: React.FC = () => {
                     <span className="text-[#71717A]">MAC:</span>
                     <span className="text-[#A1A1AA] text-[11px]">{device.macAddress}</span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#71717A]">OS:</span>
+                    <div className="flex items-center gap-1">
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] border truncate max-w-[130px] ${osInfo.bg} ${osInfo.text} ${osInfo.border}`}>
+                        {device.osGuess || 'Unidentified'}
+                      </span>
+                      {device.osConfidence !== undefined && (
+                        <span className="text-[10px] text-zinc-400 font-mono">({device.osConfidence}%)</span>
+                      )}
+                    </div>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-[#71717A]">Trust:</span>
                     <span
@@ -343,6 +441,22 @@ export const DevicesView: React.FC = () => {
                     {formatTimeAgo(device.lastSeen)}
                   </span>
                   <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setDetectingDeviceId(device.id);
+                        try {
+                          await detectDeviceOs(device.id);
+                        } finally {
+                          setDetectingDeviceId(null);
+                        }
+                      }}
+                      disabled={detectingDeviceId === device.id}
+                      className="p-1.5 bg-[#18181B] hover:bg-zinc-700 text-zinc-400 hover:text-emerald-400 rounded border border-[#27272A] text-xs transition-colors"
+                      title="Fingerprint device OS"
+                    >
+                      <Fingerprint className={`w-3.5 h-3.5 ${detectingDeviceId === device.id ? 'animate-spin text-emerald-400' : ''}`} />
+                    </button>
                     <button
                       onClick={() => setSelectedDevice(device)}
                       className="px-2.5 py-1 bg-[#18181B] hover:bg-zinc-700 text-[#FAFAFA] rounded border border-[#27272A] text-xs transition-colors"

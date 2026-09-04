@@ -152,4 +152,20 @@ export const api = {
     if (!res.ok) throw new Error('Failed to trigger discovery scan');
     return res.json();
   },
+
+  async detectDeviceOs(deviceId: string): Promise<{ device: Device; fingerprint: any }> {
+    const res = await fetch(`/api/devices/${deviceId}/detect-os`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to detect device OS');
+    return res.json();
+  },
+
+  async detectAllDevicesOs(): Promise<{ count: number; devices: Device[] }> {
+    const res = await fetch('/api/discovery/detect-all-os', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to run OS fingerprinting across all devices');
+    return res.json();
+  },
 };

@@ -110,3 +110,92 @@ export function getTrustStatusClasses(status: DeviceTrustStatus): {
       };
   }
 }
+
+export function getOsBadgeInfo(osGuess?: string): {
+  family: 'apple' | 'windows' | 'linux' | 'android' | 'router' | 'iot' | 'unknown';
+  bg: string;
+  text: string;
+  border: string;
+  displayName: string;
+} {
+  if (!osGuess || osGuess === 'Unknown OS' || osGuess === 'Unknown Device OS') {
+    return {
+      family: 'unknown',
+      bg: 'bg-[#18181B]',
+      text: 'text-zinc-500',
+      border: 'border-[#27272A]',
+      displayName: 'Unidentified OS',
+    };
+  }
+
+  const s = osGuess.toLowerCase();
+
+  if (s.includes('apple') || s.includes('macos') || s.includes('darwin') || s.includes('ios')) {
+    return {
+      family: 'apple',
+      bg: 'bg-zinc-800/90',
+      text: 'text-zinc-100',
+      border: 'border-zinc-600/80',
+      displayName: osGuess,
+    };
+  }
+
+  if (s.includes('windows') || s.includes('win10') || s.includes('win11') || s.includes('microsoft')) {
+    return {
+      family: 'windows',
+      bg: 'bg-sky-950/40',
+      text: 'text-sky-300',
+      border: 'border-sky-800/50',
+      displayName: osGuess,
+    };
+  }
+
+  if (s.includes('ubuntu') || s.includes('debian') || s.includes('linux') || s.includes('arch') || s.includes('fedora') || s.includes('centos')) {
+    return {
+      family: 'linux',
+      bg: 'bg-amber-950/30',
+      text: 'text-amber-300',
+      border: 'border-amber-800/50',
+      displayName: osGuess,
+    };
+  }
+
+  if (s.includes('android')) {
+    return {
+      family: 'android',
+      bg: 'bg-emerald-950/30',
+      text: 'text-emerald-300',
+      border: 'border-emerald-800/50',
+      displayName: osGuess,
+    };
+  }
+
+  if (s.includes('router') || s.includes('mikrotik') || s.includes('openwrt') || s.includes('cisco') || s.includes('gateway')) {
+    return {
+      family: 'router',
+      bg: 'bg-purple-950/30',
+      text: 'text-purple-300',
+      border: 'border-purple-800/50',
+      displayName: osGuess,
+    };
+  }
+
+  if (s.includes('freertos') || s.includes('esp-idf') || s.includes('iot') || s.includes('printer') || s.includes('nest')) {
+    return {
+      family: 'iot',
+      bg: 'bg-teal-950/30',
+      text: 'text-teal-300',
+      border: 'border-teal-800/50',
+      displayName: osGuess,
+    };
+  }
+
+  return {
+    family: 'unknown',
+    bg: 'bg-zinc-900',
+    text: 'text-zinc-300',
+    border: 'border-zinc-700',
+    displayName: osGuess,
+  };
+}
+

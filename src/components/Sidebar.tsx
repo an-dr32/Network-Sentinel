@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import {
   Shield,
   LayoutDashboard,
@@ -8,12 +9,26 @@ import {
   AlertTriangle,
   FlaskConical,
   Settings,
-  Radio,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
 
 export const Sidebar: React.FC = () => {
   const { activeView, setActiveView, devices, alerts, status } = useNetwork();
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sentinel_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sentinel_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+    } catch {}
+  }, [isCollapsed]);
 
   const activeAlertsCount = alerts.filter((a) => !a.resolved).length;
   const suspiciousDevicesCount = devices.filter(
@@ -66,29 +81,79 @@ export const Sidebar: React.FC = () => {
   return (
     <aside
       id="sidebar-container"
-      className="w-64 bg-[#111113] border-r border-[#27272A] flex flex-col shrink-0 min-h-screen select-none"
+      className={`${
+        isCollapsed ? 'w-[72px]' : 'w-64'
+      } bg-[#111113] border-r border-[#27272A] flex flex-col shrink-0 min-h-screen select-none transition-all duration-300 ease-in-out relative`}
     >
-      {/* Brand Header */}
-      <div id="brand-header" className="p-4 border-b border-[#27272A] flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-100 shadow-inner">
-          <Shield className="w-4 h-4 text-emerald-400" />
-        </div>
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-sm tracking-tight text-[#FAFAFA]">Network Sentinel</span>
-            <span className="text-[10px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">v1.0</span>
+      {/* Brand Header with Animated Collapse Logo Button */}
+      <div
+        id="brand-header"
+        className={`p-3.5 border-b border-[#27272A] flex items-center ${
+          isCollapsed ? 'justify-center' : 'justify-between'
+        } transition-all duration-300`}
+      >
+        <motion.button
+          id="sidebar-logo-toggle"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.94 }}
+          title={isCollapsed ? 'Click logo to expand sidebar' : 'Click logo to collapse sidebar'}
+          className="group relative flex items-center gap-3 p-1 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 transition-colors cursor-pointer"
+        >
+          {/* Animated Shield Logo Icon */}
+          <div className="relative w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-700/80 group-hover:border-emerald-500/60 flex items-center justify-center text-zinc-100 shadow-inner group-hover:shadow-[0_0_12px_rgba(16,185,129,0.25)] transition-all duration-300">
+            <Shield className="w-5 h-5 text-emerald-400 transition-transform duration-300 group-hover:rotate-6" />
+            
+            {/* Collapse indicator micro-arrow pill */}
+            <span
+              className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-600 group-hover:bg-emerald-950 group-hover:border-emerald-500/60 flex items-center justify-center text-zinc-300 group-hover:text-emerald-300 transition-all shadow-sm ${
+                isCollapsed ? 'rotate-180' : ''
+              }`}
+            >
+              <ChevronLeft className="w-2.5 h-2.5" />
+            </span>
           </div>
-          <p className="text-[11px] text-[#71717A] truncate font-mono">
-            {status?.subnet || '192.168.1.0/24'}
-          </p>
-        </div>
+
+          {/* Expanded Brand Name & Subnet Label */}
+          {!isCollapsed && (
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-sm tracking-tight text-[#FAFAFA] group-hover:text-emerald-300 transition-colors">
+                  Network Sentinel
+                </span>
+                <span className="text-[10px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono">
+                  v1.0
+                </span>
+              </div>
+              <p className="text-[11px] text-[#71717A] truncate font-mono mt-0.5">
+                {status?.subnet || '192.168.1.0/24'}
+              </p>
+            </div>
+          )}
+        </motion.button>
+
+        {/* Dedicated subtle collapse button when expanded */}
+        {!isCollapsed && (
+          <button
+            onClick={() => setIsCollapsed(true)}
+            className="p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-md transition-colors"
+            title="Collapse sidebar to icons"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Navigation Links */}
-      <nav id="sidebar-nav" className="flex-1 p-3 space-y-1 overflow-y-auto">
-        <div className="text-[11px] font-medium text-[#71717A] px-3 py-1 uppercase tracking-wider">
-          Monitoring
-        </div>
+      <nav id="sidebar-nav" className="flex-1 p-2 space-y-1 overflow-y-auto">
+        {!isCollapsed ? (
+          <div className="text-[10px] font-mono uppercase tracking-wider text-[#71717A] px-2.5 py-1">
+            Monitoring
+          </div>
+        ) : (
+          <div className="w-8 mx-auto border-t border-[#27272A] my-2" />
+        )}
+
         {navItems.slice(0, 5).map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
@@ -97,17 +162,25 @@ export const Sidebar: React.FC = () => {
               key={item.id}
               id={`nav-item-${item.id}`}
               onClick={() => setActiveView(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              title={isCollapsed ? `${item.label}${item.badge ? ` (${item.badge})` : ''}` : undefined}
+              className={`w-full flex items-center ${
+                isCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'
+              } rounded-md text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-[#18181B] text-[#FAFAFA] border border-[#27272A] shadow-sm'
                   : 'text-[#A1A1AA] hover:text-[#FAFAFA] hover:bg-[#18181B]/50'
               }`}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="relative flex items-center gap-2.5">
                 <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-[#71717A]'}`} />
-                <span>{item.label}</span>
+                {!isCollapsed && <span>{item.label}</span>}
+                {isCollapsed && item.badge && (
+                  <span className={`absolute -top-1.5 -right-2 text-[9px] font-mono px-1 rounded-full ${item.badgeColor}`}>
+                    {item.badge}
+                  </span>
+                )}
               </div>
-              {item.badge && (
+              {!isCollapsed && item.badge && (
                 <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${item.badgeColor}`}>
                   {item.badge}
                 </span>
@@ -116,9 +189,14 @@ export const Sidebar: React.FC = () => {
           );
         })}
 
-        <div className="text-[11px] font-medium text-[#71717A] px-3 pt-4 pb-1 uppercase tracking-wider">
-          Laboratory & Config
-        </div>
+        {!isCollapsed ? (
+          <div className="text-[10px] font-mono uppercase tracking-wider text-[#71717A] px-2.5 pt-4 pb-1">
+            Laboratory & Config
+          </div>
+        ) : (
+          <div className="w-8 mx-auto border-t border-[#27272A] my-3" />
+        )}
+
         {navItems.slice(5).map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
@@ -127,17 +205,23 @@ export const Sidebar: React.FC = () => {
               key={item.id}
               id={`nav-item-${item.id}`}
               onClick={() => setActiveView(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              title={isCollapsed ? `${item.label}${item.tag ? ` [${item.tag}]` : ''}` : undefined}
+              className={`w-full flex items-center ${
+                isCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'
+              } rounded-md text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-[#18181B] text-[#FAFAFA] border border-[#27272A] shadow-sm'
                   : 'text-[#A1A1AA] hover:text-[#FAFAFA] hover:bg-[#18181B]/50'
               }`}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="relative flex items-center gap-2.5">
                 <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-[#71717A]'}`} />
-                <span>{item.label}</span>
+                {!isCollapsed && <span>{item.label}</span>}
+                {isCollapsed && item.tag && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400" />
+                )}
               </div>
-              {item.tag && (
+              {!isCollapsed && item.tag && (
                 <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-800/50 text-amber-300">
                   {item.tag}
                 </span>
@@ -148,23 +232,43 @@ export const Sidebar: React.FC = () => {
       </nav>
 
       {/* Collector Status Footer */}
-      <div id="sidebar-footer" className="p-3 border-t border-[#27272A] bg-[#09090B]/50">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
+      <div
+        id="sidebar-footer"
+        className={`border-t border-[#27272A] bg-[#09090B]/60 transition-all duration-300 ${
+          isCollapsed ? 'p-2.5 flex flex-col items-center' : 'p-3'
+        }`}
+        title={`Collector: ${status?.collectorType || 'mock'} | Interface: ${status?.interfaceName || 'eth0'} | ${status?.onlineDevices || 0} online`}
+      >
+        {!isCollapsed ? (
+          <>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-xs text-[#FAFAFA] font-medium">Passive Collector</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 uppercase">
+                {status?.collectorType || 'mock'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-[#71717A] font-mono">
+              <span>Interface: {status?.interfaceName || 'eth0'}</span>
+              <span>{status?.onlineDevices || 0} online</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center gap-1.5 py-1">
+            <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <span className="text-xs text-[#FAFAFA] font-medium">Passive Collector</span>
+            <span className="text-[9px] font-mono text-zinc-400">
+              {status?.onlineDevices || 0}
+            </span>
           </div>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 uppercase">
-            {status?.collectorType || 'mock'}
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-[11px] text-[#71717A] font-mono">
-          <span>Interface: {status?.interfaceName || 'eth0'}</span>
-          <span>{status?.onlineDevices || 0} online</span>
-        </div>
+        )}
       </div>
     </aside>
   );

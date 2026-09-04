@@ -9,7 +9,8 @@ import { baselineManager } from './server/baseline';
 import { responseAdapter } from './server/response';
 import { collectorManager } from './server/collectors/collectorManager';
 import { securityLabEngine } from './server/securityLab';
-import { SystemStatus, TopologyData, TopologyNode, TopologyEdge } from './server/types';
+import { osFingerprintEngine } from './server/osFingerprint';
+import { SystemStatus, TopologyData, TopologyNode, TopologyEdge, NetworkEvent } from './server/types';
 
 const PORT = 3000;
 
@@ -329,12 +330,107 @@ async function startServer() {
     res.json(updated);
   });
 
+  // OS Detection & Fingerprinting for a Specific Device
+  app.post('/api/devices/:id/detect-os', async (req, res) => {
+    const device = db.getDeviceById(req.params.id);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    try {
+      const result = await osFingerprintEngine.fingerprintDevice(device);
+      const updated = db.updateDevice(device.id, {
+        osGuess: result.osGuess,
+        osConfidence: result.confidence,
+        osDetectionDetails: result.details,
+        deviceType: result.deviceType,
+        openPorts: result.openPorts,
+      })!;
+
+      const event: NetworkEvent = {
+        id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        type: 'os_fingerprinted',
+        deviceId: device.id,
+        deviceName: device.hostname,
+        deviceIp: device.currentIp,
+        severity: 'info',
+        title: `OS Fingerprinted: ${result.osGuess}`,
+        description: `Identified OS for ${device.hostname} (${device.currentIp}) with ${result.confidence}% confidence via ${result.details.methods.join(', ')}.`,
+        evidence: {
+          osGuess: result.osGuess,
+          confidence: result.confidence,
+          signatureMatch: result.details.signatureMatch,
+          ttl: result.details.ttl,
+          openPorts: result.openPorts.map((p) => p.port),
+          methods: result.details.methods,
+        },
+        simulated: false,
+      };
+      db.addEvent(event);
+
+      broadcast('device.updated', updated);
+      broadcast('event.new', event);
+      broadcast('system.status', getSystemStatus());
+      broadcast('topology.updated', generateTopologyData());
+
+      res.json({ device: updated, fingerprint: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to detect device OS' });
+    }
+  });
+
+  // Batch OS Detection Across All Devices
+  app.post('/api/discovery/detect-all-os', async (req, res) => {
+    const devices = db.getDevices();
+    const results = [];
+
+    for (const dev of devices) {
+      try {
+        const fp = await osFingerprintEngine.fingerprintDevice(dev);
+        const updated = db.updateDevice(dev.id, {
+          osGuess: fp.osGuess,
+          osConfidence: fp.confidence,
+          osDetectionDetails: fp.details,
+          deviceType: fp.deviceType,
+          openPorts: fp.openPorts,
+        })!;
+        results.push(updated);
+        broadcast('device.updated', updated);
+      } catch (err) {
+        console.warn(`Fingerprint failed for ${dev.hostname}:`, err);
+      }
+    }
+
+    broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
+    res.json({ count: results.length, devices: results });
+  });
+
   // Discovery Trigger
   app.post('/api/discovery/scan', async (req, res) => {
     const devices = await collectorManager.discoverNow();
+
+    // Automatically enrich devices with OS fingerprinting if not yet fingerprinted
+    for (const dev of devices) {
+      if (!dev.osDetectionDetails || !dev.osGuess) {
+        try {
+          const fp = await osFingerprintEngine.fingerprintDevice(dev);
+          db.updateDevice(dev.id, {
+            osGuess: fp.osGuess,
+            osConfidence: fp.confidence,
+            osDetectionDetails: fp.details,
+            deviceType: fp.deviceType,
+            openPorts: fp.openPorts,
+          });
+        } catch {}
+      }
+    }
+
+    const currentDevices = db.getDevices();
     broadcast('system.status', getSystemStatus());
     broadcast('topology.updated', generateTopologyData());
-    res.json({ count: devices.length, devices });
+    res.json({ count: currentDevices.length, devices: currentDevices });
   });
 
   // Vite Middleware in dev or static serving in production

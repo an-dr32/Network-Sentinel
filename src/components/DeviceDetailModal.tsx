@@ -15,10 +15,14 @@ import {
   Cpu,
   Layers,
   Check,
+  Fingerprint,
+  RefreshCw,
+  CheckCircle,
+  Terminal,
 } from 'lucide-react';
 import { Device, DeviceTrustStatus } from '../types';
 import { useNetwork } from '../context/NetworkContext';
-import { formatBytes, formatRate, formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses } from '../utils/formatters';
+import { formatBytes, formatRate, formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses, getOsBadgeInfo } from '../utils/formatters';
 
 interface DeviceDetailModalProps {
   device: Device;
@@ -26,14 +30,31 @@ interface DeviceDetailModalProps {
 }
 
 export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, onClose }) => {
-  const { updateDeviceTrust, setQuarantineTarget, triggerRestore } = useNetwork();
-  const [activeTab, setActiveTab] = useState<'overview' | 'risk' | 'ports' | 'dns' | 'history'>('overview');
+  const { updateDeviceTrust, setQuarantineTarget, triggerRestore, detectDeviceOs } = useNetwork();
+  const [activeTab, setActiveTab] = useState<'overview' | 'os' | 'risk' | 'ports' | 'dns' | 'history'>('overview');
+  const [isDetectingOs, setIsDetectingOs] = useState(false);
+  const [detectSuccessMsg, setDetectSuccessMsg] = useState<string | null>(null);
 
   const riskStyle = getRiskBadgeClasses(device.riskSeverity);
   const trustStyle = getTrustStatusClasses(device.trustStatus);
+  const osInfo = getOsBadgeInfo(device.osGuess);
 
   const handleTrustChange = async (newTrust: string) => {
     await updateDeviceTrust(device.id, newTrust);
+  };
+
+  const handleFingerprintOs = async () => {
+    setIsDetectingOs(true);
+    setDetectSuccessMsg(null);
+    try {
+      const res = await detectDeviceOs(device.id);
+      setDetectSuccessMsg(`Fingerprinted as ${res.fingerprint.osGuess} (${res.fingerprint.confidence}% confidence)`);
+      setTimeout(() => setDetectSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error('OS fingerprint failed:', err);
+    } finally {
+      setIsDetectingOs(false);
+    }
   };
 
   return (
@@ -61,6 +82,13 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                 >
                   {device.quarantined ? 'ISOLATED' : device.trustStatus}
                 </span>
+                {device.osGuess && (
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono border ${osInfo.bg} ${osInfo.text} ${osInfo.border}`}
+                  >
+                    {device.osGuess}
+                  </span>
+                )}
                 {device.quarantined && (
                   <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-semibold">
                     [SIMULATED QUARANTINE]
@@ -73,6 +101,12 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                 <span className="font-mono text-[#A1A1AA]">{device.macAddress}</span>
                 <span>•</span>
                 <span className="font-mono text-emerald-400">{device.currentIp}</span>
+                {device.osConfidence !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span className="text-zinc-400 font-mono text-[11px]">{device.osConfidence}% OS match</span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -100,6 +134,12 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
         <div className="flex items-center border-b border-[#27272A] px-5 bg-[#111113] overflow-x-auto text-xs">
           {[
             { id: 'overview', label: 'Identity & Telemetry' },
+            {
+              id: 'os',
+              label: device.osGuess
+                ? `OS Fingerprint (${device.osConfidence || 0}%)`
+                : 'OS Fingerprint',
+            },
             { id: 'risk', label: `Explainable Risk (${device.riskEvidence.length})` },
             { id: 'ports', label: `Open Ports (${device.openPorts.length})` },
             { id: 'dns', label: `DNS Activity (${device.dnsLogs?.length || 0})` },
@@ -140,13 +180,100 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                   </div>
                   <div className="bg-[#18181B] p-3 rounded-lg border border-[#27272A]">
                     <span className="text-[#71717A] font-mono text-[10px] uppercase block">Operating System</span>
-                    <span className="text-[#FAFAFA] truncate block">{device.osGuess || 'Unknown Device OS'}</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`px-1.5 py-0.2 rounded text-[11px] font-mono border truncate max-w-[120px] ${osInfo.bg} ${osInfo.text} ${osInfo.border}`}>
+                        {device.osGuess || 'Unknown OS'}
+                      </span>
+                      {device.osConfidence !== undefined && (
+                        <span className="font-mono text-[10px] text-zinc-400">({device.osConfidence}%)</span>
+                      )}
+                    </div>
                   </div>
                   <div className="bg-[#18181B] p-3 rounded-lg border border-[#27272A]">
                     <span className="text-[#71717A] font-mono text-[10px] uppercase block">Device Category</span>
                     <span className="text-[#FAFAFA] uppercase font-mono">{device.deviceType}</span>
                   </div>
                 </div>
+              </div>
+
+              {/* OS Fingerprint & TCP/IP Diagnostics Card */}
+              <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Fingerprint className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA]">
+                      OS Fingerprint & TCP/IP Stack Diagnostics
+                    </h3>
+                  </div>
+                  <button
+                    onClick={handleFingerprintOs}
+                    disabled={isDetectingOs}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-emerald-400 rounded border border-zinc-700 text-xs transition-colors"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isDetectingOs ? 'animate-spin' : ''}`} />
+                    <span>{isDetectingOs ? 'Probing...' : 'Re-probe OS'}</span>
+                  </button>
+                </div>
+
+                {detectSuccessMsg && (
+                  <div className="p-2 rounded bg-emerald-950/40 border border-emerald-800/50 text-emerald-300 text-xs flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{detectSuccessMsg}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-[#111113] p-3 rounded border border-[#27272A]">
+                    <span className="text-[#71717A] text-[10px] uppercase font-mono block">Classified OS</span>
+                    <span className="text-sm font-medium text-[#FAFAFA] block mt-0.5">{device.osGuess || 'Unidentified'}</span>
+                    <span className="text-[11px] text-[#71717A] block mt-0.5">{device.osDetectionDetails?.signatureMatch || 'Signature analysis pending'}</span>
+                  </div>
+                  <div className="bg-[#111113] p-3 rounded border border-[#27272A]">
+                    <span className="text-[#71717A] text-[10px] uppercase font-mono block">Fingerprint Confidence</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            (device.osConfidence || 0) >= 80 ? 'bg-emerald-500' : (device.osConfidence || 0) >= 50 ? 'bg-amber-500' : 'bg-zinc-500'
+                          }`}
+                          style={{ width: `${device.osConfidence || 15}%` }}
+                        />
+                      </div>
+                      <span className="font-mono text-xs text-[#FAFAFA]">{device.osConfidence || 0}%</span>
+                    </div>
+                    <span className="text-[10px] text-[#71717A] block mt-1">
+                      {(device.osConfidence || 0) >= 80 ? 'High certainty match' : (device.osConfidence || 0) >= 50 ? 'Moderate certainty' : 'Low certainty heuristic'}
+                    </span>
+                  </div>
+                  <div className="bg-[#111113] p-3 rounded border border-[#27272A]">
+                    <span className="text-[#71717A] text-[10px] uppercase font-mono block">Measured ICMP TTL</span>
+                    <span className="text-sm font-mono font-medium text-emerald-400 block mt-0.5">
+                      {device.osDetectionDetails?.ttl ? `TTL=${device.osDetectionDetails.ttl}` : 'N/A (ICMP filtered)'}
+                    </span>
+                    <span className="text-[10px] text-[#71717A] block mt-0.5">
+                      {device.osDetectionDetails?.ttl
+                        ? device.osDetectionDetails.ttl <= 64
+                          ? 'Linux/Unix/Darwin (64 default)'
+                          : device.osDetectionDetails.ttl <= 128
+                          ? 'Windows NT/SMB (128 default)'
+                          : 'Network Router/Infrastructure (255)'
+                        : 'ICMP echo filtered or offline'}
+                    </span>
+                  </div>
+                </div>
+
+                {device.osDetectionDetails?.methods && device.osDetectionDetails.methods.length > 0 && (
+                  <div>
+                    <span className="text-[10px] font-mono text-[#71717A] uppercase block mb-1.5">Detection Heuristics Applied</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {device.osDetectionDetails.methods.map((method, idx) => (
+                        <span key={idx} className="px-2 py-0.5 rounded text-[11px] bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono">
+                          ✓ {method}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Traffic Telemetry */}
@@ -201,7 +328,222 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
             </div>
           )}
 
-          {/* TAB 2: EXPLAINABLE RISK BREAKDOWN */}
+          {/* TAB 2: OS FINGERPRINT & TCP/IP STACK */}
+          {activeTab === 'os' && (
+            <div className="space-y-5">
+              {/* Header Hero Banner */}
+              <div className="bg-[#18181B] p-5 rounded-lg border border-[#27272A] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-12 h-12 rounded-lg bg-[#111113] border border-[#27272A] flex items-center justify-center text-emerald-400">
+                    <Fingerprint className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-[#FAFAFA]">
+                        {device.osGuess || 'Unidentified Operating System'}
+                      </h3>
+                      <span className={`px-2 py-0.5 rounded text-xs font-mono border ${osInfo.bg} ${osInfo.text} ${osInfo.border}`}>
+                        {osInfo.displayName}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#71717A] mt-1">
+                      {device.osDetectionDetails?.signatureMatch || 'Heuristic multi-vector TCP/IP analysis'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="text-right hidden sm:block">
+                    <span className="text-[10px] font-mono text-[#71717A] uppercase block">Detection Confidence</span>
+                    <span className="text-sm font-mono font-semibold text-emerald-400">
+                      {device.osConfidence || 0}% Certainty
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleFingerprintOs}
+                    disabled={isDetectingOs}
+                    className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors shadow-sm"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isDetectingOs ? 'animate-spin' : ''}`} />
+                    <span>{isDetectingOs ? 'Scanning Network Stack...' : 'Probe Device OS'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {detectSuccessMsg && (
+                <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <span>{detectSuccessMsg}</span>
+                </div>
+              )}
+
+              {/* 3 Core Forensic Pillars */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {/* Pillar 1: ICMP TTL */}
+                <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-[#71717A]">Pillar 1: TCP/IP Stack TTL</span>
+                    <span className="text-[10px] font-mono text-emerald-400">Layer 3</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-mono font-bold text-[#FAFAFA]">
+                      {device.osDetectionDetails?.ttl ? device.osDetectionDetails.ttl : 'N/A'}
+                    </span>
+                    <span className="text-xs text-[#71717A] font-mono">
+                      {device.osDetectionDetails?.ttl
+                        ? device.osDetectionDetails.ttl <= 64
+                          ? '(Unix/Linux/Darwin base 64)'
+                          : device.osDetectionDetails.ttl <= 128
+                          ? '(Windows NT base 128)'
+                          : '(Network Gateway base 255)'
+                        : 'Unreachable via ICMP'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#A1A1AA] leading-relaxed">
+                    Operating system TCP/IP network stacks initialize IP packets with distinct default TTL values: Linux/Darwin use 64, Windows NT uses 128, and embedded routers use 255.
+                  </p>
+                </div>
+
+                {/* Pillar 2: Open Service Ports */}
+                <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-[#71717A]">Pillar 2: Listening Ports</span>
+                    <span className="text-[10px] font-mono text-emerald-400">Layer 4</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-mono font-bold text-[#FAFAFA]">
+                      {device.openPorts.length}
+                    </span>
+                    <span className="text-xs text-[#71717A] font-mono">Discovered Ports</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {device.openPorts.length === 0 ? (
+                      <span className="text-[11px] text-[#71717A]">No listening ports exposed or filtered by firewall</span>
+                    ) : (
+                      device.openPorts.map((p) => (
+                        <span
+                          key={p.port}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-900 border border-zinc-700 text-zinc-200"
+                        >
+                          {p.port}/{p.service}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Pillar 3: OUI & Hostname Analysis */}
+                <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-[#71717A]">Pillar 3: Vendor & Host Heuristics</span>
+                    <span className="text-[10px] font-mono text-emerald-400">Layer 2/7</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-[#FAFAFA] truncate">{device.vendor || 'Unknown Vendor'}</div>
+                    <div className="text-xs font-mono text-zinc-400 truncate">{device.hostname}</div>
+                  </div>
+                  <p className="text-[11px] text-[#A1A1AA] leading-relaxed">
+                    Correlates IEEE Organizationally Unique Identifier (OUI) hardware manufacturing records with NetBIOS/mDNS hostname conventions.
+                  </p>
+                </div>
+              </div>
+
+              {/* Service Banners Retrieved */}
+              {device.osDetectionDetails?.banners && Object.keys(device.osDetectionDetails.banners).length > 0 && (
+                <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-emerald-400" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA]">
+                      Captured Service Banners & Handshake Evidence
+                    </h4>
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(device.osDetectionDetails.banners).map(([service, banner]) => (
+                      <div key={service} className="p-2.5 rounded bg-[#111113] border border-[#27272A] font-mono text-xs">
+                        <span className="text-[#71717A] uppercase text-[10px] block">{service} Banner</span>
+                        <span className="text-emerald-400 block mt-0.5 break-all">{banner}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Applied Detection Methods */}
+              <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-3">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA]">
+                  Applied Fingerprinting Pipelines
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {[
+                    {
+                      name: 'Passive ICMP TTL Stack Analysis',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('ttl')),
+                      desc: 'Measures Time-to-Live on ICMP responses to classify Unix (64), Windows (128), or Gateway (255).',
+                    },
+                    {
+                      name: 'Active TCP SYN/ACK Probing',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('port') || m.toLowerCase().includes('service')),
+                      desc: 'Tests standard management ports (22 SSH, 80 HTTP, 445 SMB, 135 RPC, 3389 RDP).',
+                    },
+                    {
+                      name: 'Service Banner Inspection',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('banner')),
+                      desc: 'Parses SSH daemon strings, HTTP Server headers, and protocol responses for OS signatures.',
+                    },
+                    {
+                      name: 'IEEE OUI Hardware Vendor Profiling',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('vendor') || m.toLowerCase().includes('oui')),
+                      desc: 'Queries IEEE registered MAC prefixes to establish hardware manufacture identity.',
+                    },
+                    {
+                      name: 'Local Host Kernel System Inspection',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('kernel') || m.toLowerCase().includes('host')),
+                      desc: 'Examines native kernel platform release, architecture, and network interface metadata.',
+                    },
+                    {
+                      name: 'Network Topology & Role Heuristics',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('gateway') || m.toLowerCase().includes('topology')),
+                      desc: 'Assesses default gateway routing position and broadcast telemetry for infrastructure categorization.',
+                    },
+                  ].map((pipe, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded border flex items-start gap-2.5 ${
+                        pipe.active ? 'bg-emerald-950/20 border-emerald-800/40 text-[#FAFAFA]' : 'bg-[#111113] border-[#27272A] text-zinc-500'
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        {pipe.active ? (
+                          <Check className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full border border-zinc-700" />
+                        )}
+                      </div>
+                      <div>
+                        <div className={`font-medium ${pipe.active ? 'text-[#FAFAFA]' : 'text-zinc-500'}`}>
+                          {pipe.name}
+                        </div>
+                        <div className="text-[11px] text-[#71717A] mt-0.5 leading-normal">{pipe.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sentinel Agentless Engine Methodology Note */}
+              <div className="p-4 rounded-lg bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-400 space-y-1.5">
+                <div className="font-semibold text-[#FAFAFA] flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Agentless, Non-Intrusive Fingerprinting Architecture</span>
+                </div>
+                <p className="leading-relaxed text-[11px]">
+                  Network Sentinel operates without installing client agents or proprietary drivers on observed network endpoints. By synthesizing RFC-compliant Layer 2 ARP frames, Layer 3 ICMP TTL characteristics, Layer 4 TCP port probes, and Layer 7 protocol banners, Sentinel constructs a high-fidelity operating system profile while minimizing network overhead.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: EXPLAINABLE RISK BREAKDOWN */}
           {activeTab === 'risk' && (
             <div className="space-y-4">
               <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] flex items-center justify-between">
