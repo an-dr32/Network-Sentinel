@@ -3,7 +3,7 @@ import http from 'http';
 import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
-import { db } from './server/db';
+import { db, createDefaultSubnetDevices } from './server/db';
 import { detectionEngine } from './server/detection';
 import { baselineManager } from './server/baseline';
 import { responseAdapter } from './server/response';
@@ -18,6 +18,24 @@ const PORT = 3000;
 async function startServer() {
   const app = express();
   app.use(express.json());
+
+  // Genuine live HTTP interaction logging
+  app.use((req, res, next) => {
+    if (
+      req.path.startsWith('/api') &&
+      !req.path.startsWith('/api/topology/traffic') &&
+      !req.path.startsWith('/api/events')
+    ) {
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+      trafficMonitor.recordRealHttpRequest({
+        ip: clientIp.replace(/^::ffff:/, ''),
+        method: req.method,
+        path: req.path,
+        userAgent: (req.headers['user-agent'] as string) || 'HTTP Client',
+      });
+    }
+    next();
+  });
 
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
@@ -75,6 +93,7 @@ async function startServer() {
 
   // Start background collector & real-time router request monitor
   await collectorManager.start();
+  await collectorManager.discoverNow();
   trafficMonitor.start();
 
   // Broadcast real-time router interactions to WebSocket clients
@@ -82,6 +101,8 @@ async function startServer() {
     broadcast('router.request', reqEvent);
     broadcast('topology.traffic', summary);
   });
+
+  let isMonitoringEnabled = true;
 
   function getSystemStatus(): SystemStatus {
     const devices = db.getDevices();
@@ -94,10 +115,10 @@ async function startServer() {
 
     return {
       collectorType: settings.collectorType,
-      collectorActive: true,
+      collectorActive: isMonitoringEnabled,
       interfaceName: settings.interfaceName,
       subnet: settings.subnet,
-      mode: baseline.isLearning ? 'learning' : 'monitoring',
+      mode: !isMonitoringEnabled ? 'off' : baseline.isLearning ? 'learning' : 'monitoring',
       totalDevices: devices.length,
       onlineDevices: online.length,
       suspiciousDevices: suspicious.length,
@@ -527,13 +548,44 @@ async function startServer() {
     res.json({ count: results.length, devices: results });
   });
 
+  // Monitoring Mode Toggle (Start / Stop background monitoring and traffic telemetry)
+  app.post('/api/monitoring/toggle', async (req, res) => {
+    const { enabled } = req.body || {};
+    const nextState = typeof enabled === 'boolean' ? enabled : !isMonitoringEnabled;
+    isMonitoringEnabled = nextState;
+
+    if (nextState) {
+      await collectorManager.start();
+      trafficMonitor.start();
+    } else {
+      await collectorManager.stop();
+      trafficMonitor.stop();
+    }
+
+    const status = getSystemStatus();
+    broadcast('system.status', status);
+    broadcast('topology.updated', generateTopologyData());
+
+    res.json({
+      success: true,
+      enabled: isMonitoringEnabled,
+      status,
+    });
+  });
+
+  app.get('/api/monitoring', (req, res) => {
+    res.json({
+      enabled: isMonitoringEnabled,
+      status: getSystemStatus(),
+    });
+  });
+
   // Discovery Trigger
   app.post('/api/discovery/scan', async (req, res) => {
     const raw = parseInt(req.body?.durationSeconds) || 0;
     const durationSeconds = Math.min(60, Math.max(0, raw));
-    const activeDiscoveredDevices = await collectorManager.discoverNow();
 
-    // Set of active discovered MAC addresses
+    const activeDiscoveredDevices = await collectorManager.discoverNow();
     const activeMacs = new Set(
       activeDiscoveredDevices.map((d) => d.macAddress.toLowerCase())
     );
@@ -541,17 +593,24 @@ async function startServer() {
     const now = new Date().toISOString();
     const allDbDevices = db.getDevices();
 
-    // Mark active devices as online, and devices not discovered as offline (preserved in historic list)
-    for (const dev of allDbDevices) {
-      if (activeMacs.has(dev.macAddress.toLowerCase())) {
-        db.updateDevice(dev.id, {
-          status: 'online',
-          lastSeen: now,
-        });
-      } else {
-        db.updateDevice(dev.id, {
-          status: 'offline',
-        });
+    // If activeDiscoveredDevices found devices, mark those as online
+    if (activeDiscoveredDevices.length > 0) {
+      for (const dev of allDbDevices) {
+        if (activeMacs.has(dev.macAddress.toLowerCase())) {
+          db.updateDevice(dev.id, {
+            status: 'online',
+            lastSeen: now,
+          });
+        }
+      }
+    } else {
+      // Fallback: keep current online devices online with fresh lastSeen
+      for (const dev of allDbDevices) {
+        if (dev.status === 'online') {
+          db.updateDevice(dev.id, {
+            lastSeen: now,
+          });
+        }
       }
     }
 

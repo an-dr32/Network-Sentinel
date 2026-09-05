@@ -1,12 +1,11 @@
 import { NetworkCollector } from './collector.interface';
-import { mockCollector } from './mockCollector';
 import { linuxCollector } from './linuxCollector';
 import { macosCollector } from './macosCollector';
 import { db } from '../db';
 import { NetworkEvent } from '../types';
 
 export class CollectorManager {
-  private activeCollector: NetworkCollector = mockCollector;
+  private activeCollector: NetworkCollector = linuxCollector;
   private isMonitoring = false;
   private listeners: ((event: NetworkEvent) => void)[] = [];
 
@@ -16,16 +15,17 @@ export class CollectorManager {
 
   private async init() {
     const settings = db.getSettings();
-    if (process.platform === 'darwin' && (await macosCollector.isAvailable())) {
-      this.activeCollector = macosCollector;
-    } else if (process.platform === 'linux' && (await linuxCollector.isAvailable())) {
-      this.activeCollector = linuxCollector;
-    } else if (settings.collectorType === 'linux' && (await linuxCollector.isAvailable())) {
-      this.activeCollector = linuxCollector;
-    } else if (settings.collectorType === 'macos' && (await macosCollector.isAvailable())) {
+    if (process.platform === 'darwin') {
       this.activeCollector = macosCollector;
     } else {
-      this.activeCollector = mockCollector;
+      this.activeCollector = linuxCollector;
+    }
+
+    // Run real discovery immediately on start
+    try {
+      await this.activeCollector.discoverDevices();
+    } catch (err) {
+      console.warn('Initial device discovery warning:', err);
     }
   }
 
@@ -62,15 +62,17 @@ export class CollectorManager {
 
   public async setCollectorType(type: 'linux' | 'macos' | 'windows' | 'mock') {
     await this.stop();
-    if (type === 'linux' && (await linuxCollector.isAvailable())) {
-      this.activeCollector = linuxCollector;
-    } else if (type === 'macos' && (await macosCollector.isAvailable())) {
+    if (type === 'macos' || process.platform === 'darwin') {
       this.activeCollector = macosCollector;
     } else {
-      this.activeCollector = mockCollector;
+      this.activeCollector = linuxCollector;
     }
-    db.updateSettings({ collectorType: type });
+    db.updateSettings({ collectorType: this.activeCollector.type });
     await this.start();
+  }
+
+  public isRunning(): boolean {
+    return this.isMonitoring;
   }
 
   public getActiveCollectorType() {

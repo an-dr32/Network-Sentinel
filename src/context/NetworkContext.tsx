@@ -47,6 +47,7 @@ interface NetworkContextType {
   cancelDiscoveryScan: () => void;
   detectDeviceOs: (deviceId: string) => Promise<{ device: Device; fingerprint: any }>;
   detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
+  toggleMonitoring: (enabled?: boolean) => Promise<void>;
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
@@ -434,6 +435,18 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return res;
   };
 
+  const toggleMonitoring = async (enabled?: boolean) => {
+    try {
+      const res = await api.toggleMonitoring(enabled);
+      if (res?.status) {
+        setStatus(res.status);
+      }
+      await refreshAll();
+    } catch (err) {
+      console.error('Failed to toggle monitoring:', err);
+    }
+  };
+
   return (
     <NetworkContext.Provider
       value={{
@@ -472,6 +485,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         cancelDiscoveryScan,
         detectDeviceOs,
         detectAllDevicesOs,
+        toggleMonitoring,
       }}
     >
       {children}

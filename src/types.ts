@@ -98,6 +98,8 @@ export type NetworkEventType =
   | 'device_offline'
   | 'ip_changed'
   | 'dns_anomaly'
+  | 'dns_query'
+  | 'connection_established'
   | 'port_scan'
   | 'traffic_anomaly'
   | 'risk_changed'
@@ -252,7 +254,7 @@ export interface SystemStatus {
   collectorActive: boolean;
   interfaceName: string;
   subnet: string;
-  mode: 'learning' | 'monitoring';
+  mode: 'learning' | 'monitoring' | 'off';
   totalDevices: number;
   onlineDevices: number;
   suspiciousDevices: number;
