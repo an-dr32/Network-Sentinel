@@ -37,9 +37,9 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'sentinel_db.json');
 
 const INITIAL_SETTINGS = {
-  subnet: '169.254.169.0/24',
-  interfaceName: 'eth2',
-  collectorType: (process.platform === 'darwin' ? 'macos' : 'linux') as 'linux' | 'macos' | 'windows' | 'mock',
+  subnet: '192.168.1.0/24',
+  interfaceName: process.platform === 'darwin' ? 'en0' : 'eth0',
+  collectorType: (process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : 'mock') as 'linux' | 'macos' | 'windows' | 'mock',
   autoScanIntervalSeconds: 10,
   baselineDurationSeconds: 15,
   riskWeights: {
@@ -63,15 +63,19 @@ const INITIAL_BASELINE: BaselineFeatures = {
   totalObservedPackets: 0,
   startTime: new Date().toISOString(),
   estimatedRemainingSeconds: 0,
-  knownSubnets: ['169.254.169.0/24', '169.254.8.0/24', '127.0.0.0/8'],
-  typicalPorts: [53, 80, 443, 22, 3000, 8080, 8000],
-  commonDnsDomains: ['metadata.google.internal', 'gateway.internal', 'localhost'],
-  averageTrafficKbps: 64,
+  knownSubnets: [],
+  typicalPorts: [],
+  commonDnsDomains: [],
+  averageTrafficKbps: 0,
 };
 
-export function createDefaultSubnetDevices(): Device[] {
-  return [];
-}
+const LEGACY_MOCK_DEVICE_IDS = new Set([
+  'dev_gateway_01',
+  'dev_workstation_02',
+  'dev_nas_03',
+  'dev_iot_cam_04',
+  'dev_printer_05',
+]);
 
 export class Database {
   private data: DatabaseSchema;
@@ -94,51 +98,29 @@ export class Database {
   private loadData(): DatabaseSchema {
     try {
       if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, "utf-8");
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
 
-        // Filter out legacy mock devices
+        // Sanitize: strip out legacy hardcoded mock devices and mock events
         if (Array.isArray(parsed.devices)) {
-          parsed.devices = parsed.devices.filter((d) => {
-            if (!d || !d.macAddress) return false;
-            const mac = d.macAddress.toLowerCase();
-            if (
-              mac === "3c:22:fb:a1:44:01" ||
-              mac === "f0:18:98:3d:44:a2" ||
-              mac === "48:2a:e3:bb:11:c4" ||
-              mac === "00:11:32:8f:90:12" ||
-              mac === "70:5a:0f:44:88:99" ||
-              mac === "54:27:1e:9a:33:55" ||
-              mac === "bc:d1:d3:5e:66:77" ||
-              mac === "74:83:c2:11:22:33" ||
-              mac === "b8:27:eb:77:88:99" ||
-              mac === "cc:50:e3:44:77:88" ||
-              mac === "b8:27:eb:55:44:33"
-            ) {
-              return false;
-            }
-            if (d.currentIp && d.currentIp.startsWith("192.168.1.")) {
-              return false;
-            }
-            return true;
-          });
+          parsed.devices = parsed.devices.filter(
+            (d: Device) => !LEGACY_MOCK_DEVICE_IDS.has(d.id)
+          );
         } else {
           parsed.devices = [];
         }
 
-        if (!Array.isArray(parsed.events)) {
+        if (Array.isArray(parsed.events)) {
+          parsed.events = parsed.events.filter(
+            (e: NetworkEvent) =>
+              !['evt_init_01', 'evt_init_02', 'evt_init_03'].includes(e.id) &&
+              (!e.deviceId || !LEGACY_MOCK_DEVICE_IDS.has(e.deviceId))
+          );
+        } else {
           parsed.events = [];
-        } else {
-          parsed.events = parsed.events.filter((e) => !e.id?.includes("syno") && !e.id?.includes("cam") && !e.id?.includes("esp32"));
         }
 
-        if (!Array.isArray(parsed.alerts)) {
-          parsed.alerts = [];
-        } else {
-          parsed.alerts = parsed.alerts.filter((a) => !a.id?.includes("syno") && !a.id?.includes("cam") && !a.id?.includes("esp32"));
-        }
-
-        if (!parsed.baseline) {
+        if (!parsed.baseline || parsed.devices.length === 0) {
           parsed.baseline = {
             ...INITIAL_BASELINE,
             devicesLearned: parsed.devices.length,
@@ -150,7 +132,7 @@ export class Database {
         return parsed;
       }
     } catch {
-      console.warn("Could not read existing database file, initializing fresh database");
+      console.warn('Could not read existing database file, initializing fresh database');
     }
     return this.createDefaultDataset();
   }
@@ -169,7 +151,7 @@ export class Database {
       devices: [],
       events: [],
       alerts: [],
-      baseline: { ...INITIAL_BASELINE, devicesLearned: 0 },
+      baseline: { ...INITIAL_BASELINE },
       actions: [],
       settings: { ...INITIAL_SETTINGS },
     };

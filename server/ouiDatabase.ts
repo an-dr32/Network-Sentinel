@@ -164,9 +164,7 @@ const VENDOR_PREFIX_MAP: Record<string, string> = {
   '94:63:72': 'Samsung Electronics',
   'a0:0b:ba': 'Samsung Electronics',
 
-  // Google LLC / Cloud / Nest
-  '42:00:4e': 'Google Cloud Platform (Virtual NIC)',
-  '42:01:0a': 'Google Cloud Platform (Virtual NIC)',
+  // Google LLC / Nest
   '18:b4:30': 'Nest Labs (Google)',
   'f4:f5:e8': 'Google LLC',
   'd8:6c:63': 'Google LLC',

@@ -199,14 +199,4 @@ export const api = {
     if (!res.ok) throw new Error('Failed to run OS fingerprinting across all devices');
     return res.json();
   },
-
-  async toggleMonitoring(enabled?: boolean): Promise<{ success: boolean; enabled: boolean; status: any }> {
-    const res = await fetch('/api/monitoring/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-    if (!res.ok) throw new Error('Failed to toggle monitoring');
-    return res.json();
-  },
 };
