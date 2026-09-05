@@ -39,6 +39,9 @@ export const OverviewView: React.FC = () => {
   const activeAlerts = alerts.filter((a) => !a.resolved);
   const recentEvents = events.slice(0, 7);
 
+  // Active online devices for the primary table
+  const activeOnlineDevices = devices.filter((d) => d.status === 'online');
+
   // Aggregate network rate
   const totalThroughputKbps = devices.reduce((acc, d) => acc + (d.trafficStats?.rateKbps || 0), 0);
 
@@ -142,8 +145,10 @@ export const OverviewView: React.FC = () => {
             <div className="p-4 border-b border-[#27272A] flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Server className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-semibold text-[#FAFAFA]">Discovered Subnet Nodes</h3>
-                <span className="text-xs text-[#71717A] font-mono">({status?.subnet || '192.168.1.0/24'})</span>
+                <h3 className="text-sm font-semibold text-[#FAFAFA]">Active Connected Nodes</h3>
+                <span className="text-xs text-[#71717A] font-mono">
+                  ({activeOnlineDevices.length} online • {devices.length - activeOnlineDevices.length} historic)
+                </span>
               </div>
               <button
                 onClick={() => setActiveView('devices')}
@@ -166,15 +171,15 @@ export const OverviewView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#27272A]">
-                  {devices.length === 0 ? (
+                  {activeOnlineDevices.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-8 text-center text-[#71717A]">
-                        <p className="text-xs mb-1 font-medium text-zinc-300">No devices detected on subnet</p>
-                        <p className="text-[11px] text-zinc-500">Scan subnet from the header to discover active hardware nodes.</p>
+                        <p className="text-xs mb-1 font-medium text-zinc-300">No active devices connected on subnet</p>
+                        <p className="text-[11px] text-zinc-500">Scan subnet from the header to discover connected hardware nodes.</p>
                       </td>
                     </tr>
                   ) : (
-                    devices.slice(0, 6).map((device) => {
+                    activeOnlineDevices.slice(0, 6).map((device) => {
                       const riskStyle = getRiskBadgeClasses(device.riskSeverity);
                       const trustStyle = getTrustStatusClasses(device.trustStatus);
                       return (
@@ -185,17 +190,13 @@ export const OverviewView: React.FC = () => {
                         >
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
-                              <span
-                                className={`w-2 h-2 rounded-full ${
-                                  device.status === 'online' ? 'bg-emerald-500' : 'bg-zinc-600'
-                                }`}
-                              />
+                              <span className="w-2 h-2 rounded-full bg-emerald-500" />
                               <div>
                                 <div className="font-medium text-[#FAFAFA] truncate max-w-[150px]">
-                                  {device.hostname}
+                                  {device.customName || device.hostname}
                                 </div>
                                 <div className="text-[11px] text-[#71717A] truncate max-w-[150px]">
-                                  {device.vendor}
+                                  {device.customName ? device.hostname : device.vendor}
                                 </div>
                               </div>
                             </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Shield,
@@ -19,6 +19,9 @@ import {
   RefreshCw,
   CheckCircle,
   Terminal,
+  Edit2,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { Device, DeviceTrustStatus } from '../types';
 import { useNetwork } from '../context/NetworkContext';
@@ -30,10 +33,50 @@ interface DeviceDetailModalProps {
 }
 
 export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, onClose }) => {
-  const { updateDeviceTrust, setQuarantineTarget, triggerRestore, detectDeviceOs } = useNetwork();
+  const {
+    updateDeviceTrust,
+    updateDeviceName,
+    updateDeviceStatus,
+    setQuarantineTarget,
+    triggerRestore,
+    detectDeviceOs,
+  } = useNetwork();
   const [activeTab, setActiveTab] = useState<'overview' | 'os' | 'risk' | 'ports' | 'dns' | 'history'>('overview');
   const [isDetectingOs, setIsDetectingOs] = useState(false);
   const [detectSuccessMsg, setDetectSuccessMsg] = useState<string | null>(null);
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(device.customName || '');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  useEffect(() => {
+    setNameInput(device.customName || '');
+  }, [device.customName]);
+
+  const handleSaveName = async () => {
+    setIsSavingName(true);
+    try {
+      await updateDeviceName(device.id, nameInput);
+      setIsEditingName(false);
+    } catch (err) {
+      console.error('Failed to update device name', err);
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleToggleStatus = async () => {
+    setIsUpdatingStatus(true);
+    try {
+      const nextStatus = device.status === 'online' ? 'offline' : 'online';
+      await updateDeviceStatus(device.id, nextStatus);
+    } catch (err) {
+      console.error('Failed to update status', err);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const riskStyle = getRiskBadgeClasses(device.riskSeverity);
   const trustStyle = getTrustStatusClasses(device.trustStatus);
@@ -75,8 +118,71 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
               <Server className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-[#FAFAFA]">{device.hostname}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                {isEditingName ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder={device.hostname || 'Device Name'}
+                      className="bg-[#18181B] text-[#FAFAFA] text-sm font-semibold px-2 py-0.5 rounded border border-emerald-500 focus:outline-none"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveName();
+                        if (e.key === 'Escape') setIsEditingName(false);
+                      }}
+                    />
+                    <button
+                      onClick={handleSaveName}
+                      disabled={isSavingName}
+                      className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+                      title="Save name"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNameInput(device.customName || '');
+                        setIsEditingName(false);
+                      }}
+                      className="p-1 rounded bg-[#27272A] hover:bg-[#3F3F46] text-[#A1A1AA]"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-base font-semibold text-[#FAFAFA]">
+                      {device.customName || device.hostname}
+                    </h2>
+                    {device.customName && (
+                      <span className="text-xs text-[#71717A] font-mono">({device.hostname})</span>
+                    )}
+                    <button
+                      onClick={() => {
+                        setNameInput(device.customName || device.hostname);
+                        setIsEditingName(true);
+                      }}
+                      className="p-1 rounded text-[#71717A] hover:text-[#FAFAFA] hover:bg-[#27272A] transition-colors"
+                      title="Edit device name / alias"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${
+                    device.status === 'online'
+                      ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  }`}
+                >
+                  {device.status === 'online' ? 'CONNECTED' : 'DISCONNECTED / HISTORIC'}
+                </span>
+
                 <span
                   className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${trustStyle.bg} ${trustStyle.text} ${trustStyle.border}`}
                 >
@@ -164,6 +270,78 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* Friendly Alias & Connectivity Controls */}
+              <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA] flex items-center gap-2">
+                      <Edit2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Device Name & Custom Alias
+                    </h3>
+                    <p className="text-xs text-[#71717A] mt-0.5">
+                      Assign a personalized name to easily identify this device across all tables and topology graphs.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleToggleStatus}
+                      disabled={isUpdatingStatus}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono transition-colors border ${
+                        device.status === 'online'
+                          ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700'
+                          : 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 border-emerald-800'
+                      }`}
+                      title={device.status === 'online' ? 'Disconnect to historic list' : 'Reconnect device'}
+                    >
+                      {device.status === 'online' ? (
+                        <>
+                          <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Disconnect (Move to Historic)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Reconnect (Mark Online)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder={device.hostname || 'e.g., Living Room TV, CEO MacBook Pro, Office Printer...'}
+                    className="flex-1 bg-[#111113] text-[#FAFAFA] text-xs px-3 py-2 rounded border border-[#27272A] focus:outline-none focus:border-emerald-500 font-medium"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveName();
+                    }}
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={isSavingName}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    {isSavingName ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>Save Name</span>
+                  </button>
+                  {device.customName && (
+                    <button
+                      onClick={async () => {
+                        setNameInput('');
+                        await updateDeviceName(device.id, '');
+                      }}
+                      className="px-2.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded text-xs transition-colors"
+                      title="Clear custom alias and reset to network hostname"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Identity & Discovery Facts */}
               <div>
                 <h3 className="text-xs font-medium uppercase tracking-wider text-[#71717A] mb-3">
@@ -546,14 +724,19 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
           {/* TAB 3: EXPLAINABLE RISK BREAKDOWN */}
           {activeTab === 'risk' && (
             <div className="space-y-4">
-              <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] flex items-center justify-between">
+              <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-[#FAFAFA]">Calculated Risk Score: {device.riskScore}/100</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-[#FAFAFA]">Calculated Risk Score: {device.riskScore}/100</h3>
+                    <span className="text-xs font-mono text-zinc-400">
+                      (Total detected weight: {device.riskEvidence.reduce((acc, curr) => acc + curr.points, 0) > 0 ? `+${device.riskEvidence.reduce((acc, curr) => acc + curr.points, 0)}` : device.riskEvidence.reduce((acc, curr) => acc + curr.points, 0)} pts)
+                    </span>
+                  </div>
                   <p className="text-xs text-[#71717A] mt-0.5">
-                    Evaluated by the transparent rule engine according to BIBLE.md §6 & ARCHITECTURE.md §8.
+                    Sums all active risk weights detected across device properties, open ports, and anomalies (clamped 0-100).
                   </p>
                 </div>
-                <div className={`px-3 py-1 rounded text-xs font-mono uppercase border ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
+                <div className={`px-3 py-1 rounded text-xs font-mono uppercase border self-start sm:self-auto ${riskStyle.bg} ${riskStyle.text} ${riskStyle.border}`}>
                   {device.riskSeverity} tier
                 </div>
               </div>

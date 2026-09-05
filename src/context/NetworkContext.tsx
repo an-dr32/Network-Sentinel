@@ -31,6 +31,8 @@ interface NetworkContextType {
   refreshAll: () => Promise<void>;
   clearEvents: () => Promise<void>;
   updateDeviceTrust: (deviceId: string, trustStatus: string) => Promise<void>;
+  updateDeviceName: (deviceId: string, customName: string) => Promise<void>;
+  updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => Promise<void>;
   resolveAlert: (alertId: string) => Promise<void>;
   triggerQuarantine: (deviceId: string, reason?: string) => Promise<void>;
   triggerRestore: (deviceId: string) => Promise<void>;
@@ -285,6 +287,22 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const updateDeviceName = async (deviceId: string, customName: string) => {
+    const updated = await api.updateDeviceName(deviceId, customName);
+    setDevices((prev) => prev.map((d) => (d.id === deviceId ? updated : d)));
+    if (selectedDevice?.id === deviceId) {
+      setSelectedDevice(updated);
+    }
+  };
+
+  const updateDeviceStatus = async (deviceId: string, status: 'online' | 'offline') => {
+    const updated = await api.updateDeviceStatus(deviceId, status);
+    setDevices((prev) => prev.map((d) => (d.id === deviceId ? updated : d)));
+    if (selectedDevice?.id === deviceId) {
+      setSelectedDevice(updated);
+    }
+  };
+
   const resolveAlert = async (alertId: string) => {
     const updated = await api.resolveAlert(alertId);
     setAlerts((prev) => prev.map((a) => (a.id === alertId ? updated : a)));
@@ -438,6 +456,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         refreshAll,
         clearEvents,
         updateDeviceTrust,
+        updateDeviceName,
+        updateDeviceStatus,
         resolveAlert,
         triggerQuarantine,
         triggerRestore,

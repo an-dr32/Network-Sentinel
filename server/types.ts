@@ -49,6 +49,7 @@ export interface Device {
   id: string;
   macAddress: string;
   hostname: string;
+  customName?: string;
   vendor: string;
   ipAddresses: string[];
   currentIp: string;
@@ -155,6 +156,7 @@ export interface BaselineFeatures {
 export interface TopologyNode {
   id: string;
   label: string;
+  customName?: string;
   type: 'gateway' | 'switch' | 'device';
   ip?: string;
   mac?: string;

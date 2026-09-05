@@ -17,26 +17,67 @@ import {
   RotateCcw,
   Fingerprint,
   RefreshCw,
+  Edit2,
+  Check,
+  X,
+  Wifi,
+  WifiOff,
+  History,
+  Clock,
 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
 import { Device, DeviceTrustStatus, RiskSeverity } from '../types';
 import { formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses, getOsBadgeInfo } from '../utils/formatters';
 
 export const DevicesView: React.FC = () => {
-  const { devices, setSelectedDevice, setQuarantineTarget, triggerRestore, detectDeviceOs, detectAllDevicesOs } = useNetwork();
+  const {
+    devices,
+    setSelectedDevice,
+    setQuarantineTarget,
+    triggerRestore,
+    detectDeviceOs,
+    detectAllDevicesOs,
+    updateDeviceName,
+  } = useNetwork();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [trustFilter, setTrustFilter] = useState<string>('all');
   const [riskFilter, setRiskFilter] = useState<string>('all');
   const [osFilter, setOsFilter] = useState<string>('all');
+  const [statusView, setStatusView] = useState<'online' | 'historic' | 'all'>('online');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [isDetectingAll, setIsDetectingAll] = useState(false);
   const [detectingDeviceId, setDetectingDeviceId] = useState<string | null>(null);
 
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
+  const [isSavingName, setIsSavingName] = useState<boolean>(false);
+
+  const onlineCount = useMemo(() => devices.filter((d) => d && d.status === 'online').length, [devices]);
+  const historicCount = useMemo(() => devices.filter((d) => d && d.status !== 'online').length, [devices]);
+
+  const handleSaveDeviceName = async (deviceId: string, name: string) => {
+    setIsSavingName(true);
+    try {
+      await updateDeviceName(deviceId, name);
+      setEditingDeviceId(null);
+    } catch (err) {
+      console.error('Failed to save device name', err);
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   const filteredDevices = useMemo(() => {
     return devices.filter((d) => {
       if (!d) return false;
+
+      // Status view filter: Connected vs Historic
+      if (statusView === 'online' && d.status !== 'online') return false;
+      if (statusView === 'historic' && d.status === 'online') return false;
+
       const hostname = d.hostname || '';
+      const customName = d.customName || '';
       const currentIp = d.currentIp || '';
       const macAddress = d.macAddress || '';
       const vendor = d.vendor || '';
@@ -48,6 +89,7 @@ export const DevicesView: React.FC = () => {
       const matchesSearch =
         searchQuery === '' ||
         hostname.toLowerCase().includes(query) ||
+        customName.toLowerCase().includes(query) ||
         currentIp.includes(query) ||
         macAddress.toLowerCase().includes(query) ||
         vendor.toLowerCase().includes(query) ||
@@ -117,7 +159,7 @@ export const DevicesView: React.FC = () => {
 
       return matchesSearch && matchesTrust && matchesRisk && matchesOs;
     });
-  }, [devices, searchQuery, trustFilter, riskFilter, osFilter]);
+  }, [devices, searchQuery, trustFilter, riskFilter, osFilter, statusView]);
 
   const getDeviceIcon = (deviceType: string) => {
     switch (deviceType) {
@@ -139,6 +181,76 @@ export const DevicesView: React.FC = () => {
 
   return (
     <div id="devices-view" className="p-6 space-y-6 max-w-7xl mx-auto">
+      {/* Subnet Status Segmentation Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#27272A] pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            id="tab-active-connected"
+            onClick={() => setStatusView('online')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all border ${
+              statusView === 'online'
+                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800 shadow-sm'
+                : 'bg-[#18181B] text-[#71717A] hover:text-[#FAFAFA] border-[#27272A]'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>Connected Devices</span>
+            <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-200">
+              {onlineCount}
+            </span>
+          </button>
+
+          <button
+            id="tab-historic-disconnected"
+            onClick={() => setStatusView('historic')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all border ${
+              statusView === 'historic'
+                ? 'bg-amber-950/40 text-amber-300 border-amber-800 shadow-sm'
+                : 'bg-[#18181B] text-[#71717A] hover:text-[#FAFAFA] border-[#27272A]'
+            }`}
+          >
+            <History className="w-3.5 h-3.5 text-amber-400" />
+            <span>Historic List</span>
+            <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-amber-900/60 text-amber-200">
+              {historicCount}
+            </span>
+          </button>
+
+          <button
+            id="tab-all-devices"
+            onClick={() => setStatusView('all')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
+              statusView === 'all'
+                ? 'bg-zinc-700 text-white border-zinc-500'
+                : 'bg-[#18181B] text-[#71717A] hover:text-[#FAFAFA] border-[#27272A]'
+            }`}
+          >
+            <span>All Devices</span>
+            <span className="font-mono text-[11px] text-zinc-400">
+              ({devices.length})
+            </span>
+          </button>
+        </div>
+
+        <div className="text-xs text-[#71717A] flex items-center gap-2 font-mono text-[11px]">
+          {statusView === 'online' && (
+            <span className="text-emerald-400 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Showing active connected devices on subnet
+            </span>
+          )}
+          {statusView === 'historic' && (
+            <span className="text-amber-400 flex items-center gap-1.5">
+              <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+              Preserved historic devices not detected on current scan
+            </span>
+          )}
+          {statusView === 'all' && (
+            <span>Showing all active and historic devices</span>
+          )}
+        </div>
+      </div>
+
       {/* Search & Filter Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#111113] p-4 rounded-lg border border-[#27272A]">
         {/* Search Input */}
@@ -147,7 +259,7 @@ export const DevicesView: React.FC = () => {
           <input
             id="device-search-input"
             type="text"
-            placeholder="Search by hostname, IP address, MAC, or hardware vendor..."
+            placeholder="Search by custom name, hostname, IP address, MAC, or vendor..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-[#18181B] border border-[#27272A] rounded-md pl-9 pr-4 py-2 text-xs text-[#FAFAFA] placeholder:text-[#71717A] focus:outline-none focus:border-zinc-500 font-mono"
@@ -257,7 +369,7 @@ export const DevicesView: React.FC = () => {
               <thead className="bg-[#18181B] text-[#71717A] uppercase font-mono border-b border-[#27272A]">
                 <tr>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Hostname & Vendor</th>
+                  <th className="px-4 py-3">Device Name & Hardware</th>
                   <th className="px-3 py-3">Current IP</th>
                   <th className="px-3 py-3">Hardware MAC</th>
                   <th className="px-3 py-3">OS Stack</th>
@@ -271,7 +383,9 @@ export const DevicesView: React.FC = () => {
                 {filteredDevices.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-8 text-center text-[#71717A]">
-                      No devices match current filters.
+                      {statusView === 'online'
+                        ? 'No connected devices currently match filters. Check "Historic List" for disconnected nodes.'
+                        : 'No devices match current filters.'}
                     </td>
                   </tr>
                 ) : (
@@ -280,6 +394,8 @@ export const DevicesView: React.FC = () => {
                     const riskStyle = getRiskBadgeClasses(device.riskSeverity);
                     const trustStyle = getTrustStatusClasses(device.trustStatus);
                     const osInfo = getOsBadgeInfo(device.osGuess);
+                    const isOnline = device.status === 'online';
+
                     return (
                       <tr
                         key={device.id}
@@ -292,26 +408,80 @@ export const DevicesView: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <span
                               className={`w-2 h-2 rounded-full ${
-                                device.status === 'online' ? 'bg-emerald-500' : 'bg-zinc-600'
+                                isOnline ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-zinc-600'
                               }`}
+                              title={isOnline ? 'Online / Connected' : 'Offline / Disconnected'}
                             />
                             <Icon className="w-4 h-4 text-[#71717A]" />
                           </div>
                         </td>
 
-                        {/* Hostname & Vendor */}
+                        {/* Device Name, Custom Name Input & Vendor */}
                         <td
                           className="px-4 py-3.5 cursor-pointer"
                           onClick={() => setSelectedDevice(device)}
                         >
-                          <div className="font-semibold text-[#FAFAFA] hover:text-emerald-400 transition-colors flex items-center gap-1.5">
-                            <span>{device.hostname || 'Unnamed Device'}</span>
-                            {Array.isArray(device.ipHistory) && device.ipHistory.length > 1 && (
-                              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-800 text-zinc-400">
-                                {device.ipHistory.length} IPs
+                          {editingDeviceId === device.id ? (
+                            <div
+                              className="flex items-center gap-1.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="text"
+                                value={editingName}
+                                onChange={(e) => setEditingName(e.target.value)}
+                                placeholder={device.hostname}
+                                className="bg-[#18181B] text-[#FAFAFA] text-xs px-2 py-0.5 rounded border border-emerald-500 focus:outline-none"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveDeviceName(device.id, editingName);
+                                  if (e.key === 'Escape') setEditingDeviceId(null);
+                                }}
+                              />
+                              <button
+                                onClick={() => handleSaveDeviceName(device.id, editingName)}
+                                disabled={isSavingName}
+                                className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+                                title="Save name"
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => setEditingDeviceId(null)}
+                                className="p-1 rounded bg-[#27272A] text-[#A1A1AA]"
+                                title="Cancel"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="group flex items-center gap-1.5">
+                              <span className="font-semibold text-[#FAFAFA] hover:text-emerald-400 transition-colors">
+                                {device.customName || device.hostname || 'Unnamed Device'}
                               </span>
-                            )}
-                          </div>
+                              {device.customName && (
+                                <span className="text-[11px] text-[#71717A] font-mono">
+                                  ({device.hostname})
+                                </span>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingDeviceId(device.id);
+                                  setEditingName(device.customName || device.hostname || '');
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-emerald-400 text-zinc-500 transition-opacity"
+                                title="Set friendly device name"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              {Array.isArray(device.ipHistory) && device.ipHistory.length > 1 && (
+                                <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-800 text-zinc-400">
+                                  {device.ipHistory.length} IPs
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <div className="text-[11px] text-[#71717A]">{device.vendor}</div>
                         </td>
 
@@ -424,6 +594,8 @@ export const DevicesView: React.FC = () => {
             const riskStyle = getRiskBadgeClasses(device.riskSeverity);
             const trustStyle = getTrustStatusClasses(device.trustStatus);
             const osInfo = getOsBadgeInfo(device.osGuess);
+            const isOnline = device.status === 'online';
+
             return (
               <div
                 key={device.id}
@@ -433,14 +605,33 @@ export const DevicesView: React.FC = () => {
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-[#18181B] border border-[#27272A] flex items-center justify-center text-[#FAFAFA]">
+                    <div className="w-9 h-9 rounded-lg bg-[#18181B] border border-[#27272A] flex items-center justify-center text-[#FAFAFA] relative">
                       <Icon className="w-5 h-5 text-emerald-400" />
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#111113] ${
+                          isOnline ? 'bg-emerald-500' : 'bg-zinc-600'
+                        }`}
+                      />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-sm text-[#FAFAFA] truncate max-w-[160px]">
-                        {device.hostname}
-                      </h4>
-                      <p className="text-[11px] text-[#71717A] truncate max-w-[160px]">{device.vendor}</p>
+                      <div className="flex items-center gap-1.5 group">
+                        <h4 className="font-semibold text-sm text-[#FAFAFA] truncate max-w-[160px]">
+                          {device.customName || device.hostname || 'Unnamed Device'}
+                        </h4>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedDevice(device);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-emerald-400 text-zinc-500 transition-opacity"
+                          title="Rename / Inspect"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-[#71717A] truncate max-w-[160px]">
+                        {device.customName ? `${device.hostname} • ${device.vendor}` : device.vendor}
+                      </p>
                     </div>
                   </div>
                   <span
@@ -470,6 +661,18 @@ export const DevicesView: React.FC = () => {
                         <span className="text-[10px] text-zinc-400 font-mono">({device.osConfidence}%)</span>
                       )}
                     </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#71717A]">Status:</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] uppercase border font-mono ${
+                        isOnline
+                          ? 'bg-emerald-950/50 text-emerald-400 border-emerald-800/60'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                      }`}
+                    >
+                      {isOnline ? 'Online' : 'Historic (Offline)'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#71717A]">Trust:</span>

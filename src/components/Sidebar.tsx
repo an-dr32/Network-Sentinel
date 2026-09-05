@@ -45,7 +45,7 @@ export const Sidebar: React.FC = () => {
       id: 'devices' as const,
       label: 'Devices',
       icon: Server,
-      badge: devices.length.toString(),
+      badge: devices.filter((d) => d.status === 'online').length.toString(),
       badgeColor: suspiciousDevicesCount > 0 ? 'bg-amber-950/80 text-amber-300 border border-amber-800/50' : 'bg-zinc-800 text-zinc-400',
     },
     {

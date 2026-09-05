@@ -22,129 +22,26 @@ export class DetectionEngine {
     const evidence: RiskEvidenceItem[] = [];
     const now = new Date().toISOString();
 
-    let rawScore = 0;
+    const existingEvidence = device.riskEvidence || [];
+
+    // Helper to find existing evidence by keyword
+    const findExisting = (keyword: string) =>
+      existingEvidence.find((e) => e.rule.toLowerCase().includes(keyword.toLowerCase()));
 
     // Rule 1: New / Untrusted Device
-    if (device.trustStatus === 'new') {
+    const existingNew = findExisting('new unverified') || findExisting('new device');
+    const isNew = device.trustStatus === 'new' || (!!existingNew && device.trustStatus !== 'known');
+    if (isNew && device.trustStatus !== 'known') {
       const points = weights.newDevice;
-      rawScore += points;
       evidence.push({
         rule: 'New unverified device',
         points: points,
-        reason: 'Device was recently observed on the subnet without prior baseline registration.',
-        timestamp: now,
+        reason: existingNew?.reason || 'Device joined the subnet without prior baseline authorization record.',
+        timestamp: existingNew?.timestamp || now,
       });
     }
 
-    // Rule 2: Known / Trusted Device bonus
-    if (device.trustStatus === 'known') {
-      const reduction = -Math.abs(weights.trustedBonus);
-      rawScore += reduction;
-      evidence.push({
-        rule: 'Trusted identity verification',
-        points: reduction,
-        reason: 'Device MAC and hostname verified by administrator as authorized network node.',
-        timestamp: now,
-      });
-    }
-
-    // Rule 3: Established baseline compliance
-    const baseline = db.getBaseline();
-    if (!baseline.isLearning && baseline.confidenceScore > 70 && device.trustStatus !== 'new' && device.trustStatus !== 'suspicious') {
-      const reduction = -Math.abs(weights.baselineBonus);
-      rawScore += reduction;
-      evidence.push({
-        rule: 'Normal baseline activity',
-        points: reduction,
-        reason: 'Communication frequency, destination count, and protocol distribution match learned baseline.',
-        timestamp: now,
-      });
-    }
-
-    // Rule 4: Suspicious open ports or port scan detection
-    const highRiskPorts = device.openPorts.filter((p) => [445, 139, 3389, 23, 8080, 4444].includes(p.port));
-    const scanEvidence = device.riskEvidence.find((e) => e.rule.toLowerCase().includes('port scan') || e.rule.toLowerCase().includes('reconnaissance'));
-    if (scanEvidence) {
-      rawScore += weights.portScan;
-      evidence.push(scanEvidence);
-    } else if (highRiskPorts.length >= 2) {
-      const points = Math.min(weights.portScan, 25);
-      rawScore += points;
-      evidence.push({
-        rule: 'High-risk exposed ports',
-        points: points,
-        reason: `Exposed legacy/management ports (${highRiskPorts.map((p) => p.port).join(', ')}) outside baseline standards.`,
-        timestamp: now,
-      });
-    }
-
-    // Rule 5: DNS Anomaly / Suspicious queries
-    const dnsAnomaly = device.dnsLogs?.some((d) => d.isAnomaly);
-    const dnsEvidence = device.riskEvidence.find((e) => e.rule.toLowerCase().includes('dns'));
-    if (dnsEvidence) {
-      rawScore += weights.unusualDns;
-      evidence.push(dnsEvidence);
-    } else if (dnsAnomaly) {
-      rawScore += weights.unusualDns;
-      evidence.push({
-        rule: 'Unusual DNS resolution pattern',
-        points: weights.unusualDns,
-        reason: 'Device generated queries matching high-entropy domain generation (DGA) or TXT record tunneling heuristics.',
-        timestamp: now,
-      });
-    }
-
-    // Rule 6: Abnormal Traffic volume / spike
-    const trafficEvidence = device.riskEvidence.find((e) => e.rule.toLowerCase().includes('traffic') || e.rule.toLowerCase().includes('exfiltration'));
-    if (trafficEvidence) {
-      rawScore += weights.abnormalTraffic;
-      evidence.push(trafficEvidence);
-    } else if (device.trafficStats.rateKbps > 5000) {
-      rawScore += weights.abnormalTraffic;
-      evidence.push({
-        rule: 'Abnormal traffic spike',
-        points: weights.abnormalTraffic,
-        reason: `Outbound throughput (${(device.trafficStats.rateKbps / 1000).toFixed(1)} Mbps) exceeded 3x historical device baseline.`,
-        timestamp: now,
-      });
-    }
-
-    // Rule 7: Unusual hosts / lateral connections
-    const unusualConns = device.activeConnections?.filter((c) => c.isUnusual) || [];
-    const hostEvidence = device.riskEvidence.find((e) => e.rule.toLowerCase().includes('lateral') || e.rule.toLowerCase().includes('unusual host'));
-    if (hostEvidence) {
-      rawScore += weights.unusualHosts;
-      evidence.push(hostEvidence);
-    } else if (unusualConns.length > 0) {
-      rawScore += weights.unusualHosts;
-      evidence.push({
-        rule: 'Unusual internal peer connections',
-        points: weights.unusualHosts,
-        reason: `Initiated direct connections to ${unusualConns.length} adjacent subnet hosts without prior baseline association.`,
-        timestamp: now,
-      });
-    }
-
-    // Rule 8: Explicit suspicious or blocked status
-    if (device.trustStatus === 'suspicious') {
-      rawScore += 25;
-      evidence.push({
-        rule: 'Flagged suspicious',
-        points: 25,
-        reason: 'Device manually or algorithmically flagged for active security investigation.',
-        timestamp: now,
-      });
-    } else if (device.trustStatus === 'blocked') {
-      rawScore += 50;
-      evidence.push({
-        rule: 'Quarantine enforcement',
-        points: 50,
-        reason: 'Device marked as isolated/blocked pending threat remediation.',
-        timestamp: now,
-      });
-    }
-
-    // Rule 9: Undetected Operating System (adds +20 points per user requirement and security alert)
+    // Rule 2: Undetected Operating System
     const isOsUndetected =
       device.deviceType !== 'router' &&
       (!device.osGuess ||
@@ -156,14 +53,16 @@ export class DetectionEngine {
         device.osGuess.toLowerCase().includes('unidentified') ||
         (device.osConfidence !== undefined && device.osConfidence < 50));
 
+    const existingOs = findExisting('operating system') || findExisting('undetected os');
     if (isOsUndetected) {
       const osWeight = (weights as any).unidentifiedOs ?? 20;
-      rawScore += osWeight;
       evidence.push({
         rule: 'Undetected Operating System',
         points: osWeight,
-        reason: 'Network stack blocked or failed fingerprinting probes (no standard TTL/service banner match). Assigned risk penalty.',
-        timestamp: now,
+        reason:
+          existingOs?.reason ||
+          'Network stack blocked or failed fingerprinting probes (no standard TTL/service banner match). Assigned risk penalty.',
+        timestamp: existingOs?.timestamp || now,
       });
 
       // Ensure an active security alert is registered for unidentified OS
@@ -180,7 +79,7 @@ export class DetectionEngine {
           title: 'Unidentified Operating System Detected',
           description: `Device at ${device.currentIp} (${device.macAddress}) did not match known OS signatures. Flagged with ${osWeight}-point penalty for security review.`,
           severity: 'watch',
-          riskScore: Math.min(100, rawScore),
+          riskScore: Math.min(100, osWeight),
           reasons: [
             'Network stack failed standard passive TTL and active service banner matching.',
             'Unclassified operating system poses potential stealth / anomalous device risk.',
@@ -191,6 +90,130 @@ export class DetectionEngine {
         });
       }
     }
+
+    // Rule 3: Port Scan / Suspicious Open Ports
+    const highRiskPorts = device.openPorts?.filter((p) => [445, 139, 3389, 23, 8080, 4444].includes(p.port)) || [];
+    const scanEvidence = findExisting('port scan') || findExisting('reconnaissance') || findExisting('exposed ports');
+    if (scanEvidence || highRiskPorts.length >= 2) {
+      evidence.push({
+        rule: 'Port scanning activity',
+        points: weights.portScan,
+        reason:
+          scanEvidence?.reason ||
+          `Exposed legacy/management ports (${highRiskPorts.map((p) => p.port).join(', ')}) outside baseline standards.`,
+        timestamp: scanEvidence?.timestamp || now,
+      });
+    }
+
+    // Rule 4: Unusual DNS / DGA / Tunneling
+    const dnsAnomaly = device.dnsLogs?.some((d) => d.isAnomaly);
+    const dnsEvidence = findExisting('dns');
+    if (dnsEvidence || dnsAnomaly) {
+      evidence.push({
+        rule: 'Unusual DNS resolution pattern',
+        points: weights.unusualDns,
+        reason:
+          dnsEvidence?.reason ||
+          'Device generated queries matching high-entropy domain generation (DGA) or TXT record tunneling heuristics.',
+        timestamp: dnsEvidence?.timestamp || now,
+      });
+    }
+
+    // Rule 5: Abnormal Outbound Traffic Spike
+    const trafficEvidence = findExisting('traffic') || findExisting('exfiltration');
+    if (trafficEvidence || (device.trafficStats && device.trafficStats.rateKbps > 5000)) {
+      evidence.push({
+        rule: 'Abnormal traffic spike',
+        points: weights.abnormalTraffic,
+        reason:
+          trafficEvidence?.reason ||
+          `Outbound throughput (${((device.trafficStats?.rateKbps || 0) / 1000).toFixed(1)} Mbps) exceeded 3x historical device baseline.`,
+        timestamp: trafficEvidence?.timestamp || now,
+      });
+    }
+
+    // Rule 6: Unusual Internal Hosts / Lateral Connections
+    const unusualConns = device.activeConnections?.filter((c) => c.isUnusual) || [];
+    const hostEvidence = findExisting('lateral') || findExisting('unusual host') || findExisting('internal peer');
+    if (hostEvidence || unusualConns.length > 0) {
+      evidence.push({
+        rule: 'Unusual internal peer connections',
+        points: weights.unusualHosts,
+        reason:
+          hostEvidence?.reason ||
+          `Initiated direct connections to ${unusualConns.length || 'adjacent'} subnet hosts without prior baseline association.`,
+        timestamp: hostEvidence?.timestamp || now,
+      });
+    }
+
+    // Rule 7: Quarantine Enforcement
+    if (device.trustStatus === 'blocked' || device.quarantined) {
+      evidence.push({
+        rule: 'Quarantine enforcement',
+        points: 50,
+        reason: 'Device marked as isolated/blocked pending threat remediation.',
+        timestamp: now,
+      });
+    }
+
+    // Rule 8: Known / Trusted Device bonus
+    if (device.trustStatus === 'known') {
+      const reduction = -Math.abs(weights.trustedBonus);
+      evidence.push({
+        rule: 'Trusted identity verification',
+        points: reduction,
+        reason: 'Device MAC and hostname verified by administrator as authorized network node.',
+        timestamp: now,
+      });
+    }
+
+    // Rule 9: Established baseline compliance
+    const baseline = db.getBaseline();
+    if (
+      !baseline.isLearning &&
+      baseline.confidenceScore > 70 &&
+      device.trustStatus !== 'new' &&
+      device.trustStatus !== 'suspicious' &&
+      device.trustStatus !== 'blocked' &&
+      !device.quarantined
+    ) {
+      const reduction = -Math.abs(weights.baselineBonus);
+      evidence.push({
+        rule: 'Normal baseline activity',
+        points: reduction,
+        reason: 'Communication frequency, destination count, and protocol distribution match learned baseline.',
+        timestamp: now,
+      });
+    }
+
+    // Preserve any custom or specific evidence items not covered by standard rules
+    const standardKeywords = [
+      'new unverified',
+      'new device',
+      'operating system',
+      'undetected os',
+      'port scan',
+      'reconnaissance',
+      'exposed ports',
+      'dns',
+      'traffic',
+      'exfiltration',
+      'lateral',
+      'unusual host',
+      'internal peer',
+      'quarantine',
+      'trusted identity',
+      'normal baseline',
+    ];
+    for (const item of existingEvidence) {
+      const isStandard = standardKeywords.some((k) => item.rule.toLowerCase().includes(k));
+      if (!isStandard && !evidence.some((e) => e.rule === item.rule)) {
+        evidence.push(item);
+      }
+    }
+
+    // Sum ALL detected risk weights accurately
+    const rawScore = evidence.reduce((sum, item) => sum + item.points, 0);
 
     // Clamp score between 0 and 100
     const finalScore = Math.max(0, Math.min(100, rawScore));

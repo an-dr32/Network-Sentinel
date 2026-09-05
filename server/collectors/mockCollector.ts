@@ -13,7 +13,7 @@ export class MockCollector implements NetworkCollector {
   }
 
   public async discoverDevices(): Promise<Device[]> {
-    return db.getDevices();
+    return db.getDevices().filter((d) => d.status === 'online');
   }
 
   public async startMonitoring(onEvent: (event: NetworkEvent) => void): Promise<void> {

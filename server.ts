@@ -135,13 +135,17 @@ async function startServer() {
     // The central hub node: if gateway is detected, use it; otherwise use the first device
     const hubId = gatewayDevice ? gatewayDevice.id : devices[0].id;
 
-    for (const d of devices) {
+    // Only active/connected devices are shown as topology nodes (offline devices are in historic list)
+    const connectedDevices = devices.filter((d) => d.status === 'online' || d.id === hubId);
+
+    for (const d of connectedDevices) {
       const isGateway = d.id === hubId;
       const deviceReqStats = trafficSummary.deviceStats[d.id];
 
       nodes.push({
         id: d.id,
-        label: d.hostname || d.currentIp,
+        label: d.customName || d.hostname || d.currentIp,
+        customName: d.customName,
         type: isGateway ? 'gateway' : 'device',
         ip: d.currentIp,
         mac: d.macAddress,
@@ -229,6 +233,51 @@ async function startServer() {
       riskScore: evaluation.score,
       riskSeverity: evaluation.severity,
       riskEvidence: evaluation.evidence,
+    })!;
+
+    broadcast('device.updated', updated);
+    broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
+
+    res.json(updated);
+  });
+
+  // Assign Custom Name / Alias to Device
+  app.post('/api/devices/:id/name', (req, res) => {
+    const { customName } = req.body;
+    const device = db.getDeviceById(req.params.id);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const trimmed = typeof customName === 'string' ? customName.trim() : '';
+    const updated = db.updateDevice(device.id, {
+      customName: trimmed || undefined,
+    })!;
+
+    broadcast('device.updated', updated);
+    broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
+
+    res.json(updated);
+  });
+
+  // Toggle or Update Device Online / Offline Status
+  app.post('/api/devices/:id/status', (req, res) => {
+    const { status } = req.body;
+    if (status !== 'online' && status !== 'offline') {
+      return res.status(400).json({ error: 'Status must be online or offline' });
+    }
+
+    const device = db.getDeviceById(req.params.id);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const now = new Date().toISOString();
+    const updated = db.updateDevice(device.id, {
+      status,
+      lastSeen: status === 'online' ? now : device.lastSeen,
     })!;
 
     broadcast('device.updated', updated);
@@ -383,7 +432,21 @@ async function startServer() {
     if (req.body.collectorType) {
       await collectorManager.setCollectorType(req.body.collectorType);
     }
+
+    // Re-evaluate all devices with updated risk weights so scores recalculate immediately
+    const devices = db.getDevices();
+    for (const dev of devices) {
+      const evaluation = detectionEngine.evaluateDeviceRisk(dev);
+      db.updateDevice(dev.id, {
+        riskScore: evaluation.score,
+        riskSeverity: evaluation.severity,
+        riskEvidence: evaluation.evidence,
+      });
+    }
+
+    broadcast('devices.updated', db.getDevices());
     broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
     res.json(updated);
   });
 
@@ -468,11 +531,33 @@ async function startServer() {
   app.post('/api/discovery/scan', async (req, res) => {
     const raw = parseInt(req.body?.durationSeconds) || 0;
     const durationSeconds = Math.min(60, Math.max(0, raw));
-    const devices = await collectorManager.discoverNow();
+    const activeDiscoveredDevices = await collectorManager.discoverNow();
+
+    // Set of active discovered MAC addresses
+    const activeMacs = new Set(
+      activeDiscoveredDevices.map((d) => d.macAddress.toLowerCase())
+    );
+
+    const now = new Date().toISOString();
+    const allDbDevices = db.getDevices();
+
+    // Mark active devices as online, and devices not discovered as offline (preserved in historic list)
+    for (const dev of allDbDevices) {
+      if (activeMacs.has(dev.macAddress.toLowerCase())) {
+        db.updateDevice(dev.id, {
+          status: 'online',
+          lastSeen: now,
+        });
+      } else {
+        db.updateDevice(dev.id, {
+          status: 'offline',
+        });
+      }
+    }
 
     // Automatically enrich devices with OS fingerprinting if not yet fingerprinted
-    for (const dev of devices) {
-      if (!dev.osDetectionDetails || !dev.osGuess) {
+    for (const dev of db.getDevices()) {
+      if (dev.status === 'online' && (!dev.osDetectionDetails || !dev.osGuess)) {
         try {
           const fp = await osFingerprintEngine.fingerprintDevice(dev);
           db.updateDevice(dev.id, {
@@ -487,6 +572,7 @@ async function startServer() {
     }
 
     const currentDevices = db.getDevices();
+    broadcast('devices.updated', currentDevices);
     broadcast('system.status', getSystemStatus());
     broadcast('topology.updated', generateTopologyData());
     res.json({ count: currentDevices.length, devices: currentDevices });

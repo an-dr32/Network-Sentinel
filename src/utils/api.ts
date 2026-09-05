@@ -37,6 +37,26 @@ export const api = {
     return res.json();
   },
 
+  async updateDeviceName(id: string, customName: string): Promise<Device> {
+    const res = await fetch(`/api/devices/${id}/name`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customName }),
+    });
+    if (!res.ok) throw new Error('Failed to update device name');
+    return res.json();
+  },
+
+  async updateDeviceStatus(id: string, status: 'online' | 'offline'): Promise<Device> {
+    const res = await fetch(`/api/devices/${id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error('Failed to update device status');
+    return res.json();
+  },
+
   async quarantineDevice(id: string, reason?: string): Promise<ResponseResult> {
     const res = await fetch(`/api/devices/${id}/quarantine`, {
       method: 'POST',
