@@ -5,6 +5,7 @@ import { NetworkCollector } from './collector.interface';
 import { Device, NetworkEvent } from '../types';
 import { db } from '../db';
 import { lookupOuiVendor } from '../ouiDatabase';
+import { resolveTargetInterface, warmNeighborCache } from '../interfaceDetector';
 
 const execAsync = promisify(exec);
 
@@ -30,34 +31,25 @@ export class MacosCollector implements NetworkCollector {
 
   public async discoverDevices(): Promise<Device[]> {
     const now = new Date().toISOString();
+    const settings = db.getSettings();
 
-    let defaultGwIp = '';
-    let activeIface = 'en0';
+    // 1. Resolve active interface (obeying configured Ethernet/Wi-Fi or auto-detecting connected Ethernet)
+    const target = await resolveTargetInterface(settings.interfaceName);
+    const activeIface = target.name;
+    const isEthernet = target.isEthernet;
+    const ifaceIp = target.ipAddress;
+    const broadcastIp = target.broadcastAddress;
+    const defaultGwIp = target.gatewayIp;
 
-    try {
-      // 1. Discover default gateway and active interface on macOS
-      const { stdout: routeOut } = await execAsync('route -n get default 2>/dev/null');
-      const gwMatch = routeOut.match(/gateway:\s*([\d.]+)/);
-      const ifaceMatch = routeOut.match(/interface:\s*(\w+)/);
-      if (gwMatch) defaultGwIp = gwMatch[1];
-      if (ifaceMatch) activeIface = ifaceMatch[1];
+    // 2. Actively warm neighbor cache on this interface (specifically binds -S to Ethernet IP if on Ethernet)
+    await warmNeighborCache({
+      interfaceName: activeIface,
+      ipAddress: ifaceIp,
+      broadcastAddress: broadcastIp,
+      gatewayIp: defaultGwIp,
+    });
 
-      // Ping default gateway and broadcast to populate macOS ARP cache
-      if (defaultGwIp) {
-        try {
-          await execAsync(`ping -c 1 -W 200 ${defaultGwIp} >/dev/null 2>&1`);
-        } catch {}
-      }
-
-      try {
-        // Fast burst broadcast ping across subnet
-        await execAsync(`ping -c 2 -t 1 -W 500 255.255.255.255 >/dev/null 2>&1`);
-      } catch {}
-    } catch {
-      // Fallback
-    }
-
-    // 2. Register local host Mac if available
+    // 3. Register local host Mac device
     try {
       const ifaces = os.networkInterfaces();
       const targetIface = ifaces[activeIface] || Object.values(ifaces).flat().find((i) => i && !i.internal && i.family === 'IPv4');
@@ -97,7 +89,7 @@ export class MacosCollector implements NetworkCollector {
               packetCount: 1500,
               rateKbps: 45,
             },
-            tags: ['workstation', 'primary-host', activeIface],
+            tags: ['workstation', 'primary-host', activeIface, isEthernet ? 'ethernet' : 'wifi'],
           };
           db.addDevice(hostDev);
         }
@@ -106,14 +98,14 @@ export class MacosCollector implements NetworkCollector {
       console.warn('macOS collector host device identification error:', err);
     }
 
-    // 3. Parse ARP table on macOS
+    // 4. Parse ARP table on macOS (covering both Ethernet and Wi-Fi interfaces)
     try {
       const { stdout } = await execAsync('arp -a');
       const lines = stdout.trim().split('\n');
 
       // Typical output:
       // ? (192.168.1.1) at 3c:22:fb:aa:bb:cc on en0 ifscope [ethernet]
-      // router.home (192.168.1.1) at 3c:22:fb:aa:bb:cc on en0 ifscope [ethernet]
+      // router.home (192.168.1.1) at 3c:22:fb:aa:bb:cc on en4 ifscope [ethernet]
       const arpRegex = /([^\s()]+)\s+\(([\d.]+)\)\s+at\s+([0-9a-fA-F:]+)\s+on\s+(\w+)/;
 
       for (const line of lines) {
@@ -145,9 +137,16 @@ export class MacosCollector implements NetworkCollector {
             ? 'gateway.local'
             : `host-${ip.replace(/\./g, '-')}.local`;
 
+        const entryIsEthernet =
+          iface === activeIface ? isEthernet : (iface.startsWith('en') && iface !== 'en0') || iface.startsWith('eth');
+
+        const connTypeTag = entryIsEthernet ? 'ethernet' : 'wifi';
+
         if (existing) {
           existing.lastSeen = now;
           existing.status = 'online';
+          if (!existing.tags.includes(iface)) existing.tags.push(iface);
+          if (!existing.tags.includes(connTypeTag)) existing.tags.push(connTypeTag);
           if (isGateway && !existing.tags.includes('gateway')) {
             existing.tags.push('gateway', 'infrastructure');
             existing.deviceType = 'router';
@@ -176,7 +175,7 @@ export class MacosCollector implements NetworkCollector {
                   {
                     rule: 'New unverified device',
                     points: 20,
-                    reason: 'Discovered via macOS ARP table during subnet scan',
+                    reason: `Discovered via macOS neighbor table on ${iface} (${connTypeTag.toUpperCase()})`,
                     timestamp: now,
                   },
                 ],
@@ -187,7 +186,9 @@ export class MacosCollector implements NetworkCollector {
               packetCount: 12,
               rateKbps: 15,
             },
-            tags: isGateway ? ['gateway', 'infrastructure', iface] : ['Discovered', iface],
+            tags: isGateway
+              ? ['gateway', 'infrastructure', iface, connTypeTag]
+              : ['Discovered', iface, connTypeTag],
           };
 
           db.addDevice(newDev);
@@ -201,10 +202,11 @@ export class MacosCollector implements NetworkCollector {
               deviceId: newDev.id,
               deviceName: newDev.hostname,
               deviceIp: ip,
-              title: `New Device Discovered on ${iface}`,
-              description: `Hardware ${mac} (${newDev.vendor}) detected on macOS interface ${iface}.`,
+              title: `New Device Discovered on ${iface} (${connTypeTag.toUpperCase()})`,
+              description: `Hardware ${mac} (${newDev.vendor}) detected on macOS interface ${iface} via ${connTypeTag}.`,
               evidence: {
                 interface: iface,
+                connectionType: connTypeTag,
                 ip,
                 mac,
                 vendor: newDev.vendor,

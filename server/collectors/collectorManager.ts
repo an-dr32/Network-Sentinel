@@ -60,6 +60,10 @@ export class CollectorManager {
     await this.activeCollector.stopMonitoring();
   }
 
+  public getIsMonitoring(): boolean {
+    return this.isMonitoring;
+  }
+
   public async setCollectorType(type: 'linux' | 'macos' | 'windows' | 'mock') {
     await this.stop();
     if (type === 'linux' && (await linuxCollector.isAvailable())) {

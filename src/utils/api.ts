@@ -6,12 +6,39 @@ import {
   TopologyData,
   SystemStatus,
   ResponseResult,
+  NetworkInterfaceInfo,
 } from '../types';
 
 export const api = {
   async getStatus(): Promise<SystemStatus> {
     const res = await fetch('/api/status');
     if (!res.ok) throw new Error('Failed to fetch system status');
+    return res.json();
+  },
+
+  async getInterfaces(): Promise<NetworkInterfaceInfo[]> {
+    const res = await fetch('/api/interfaces');
+    if (!res.ok) throw new Error('Failed to fetch network interfaces');
+    return res.json();
+  },
+
+  async selectInterface(interfaceName: string, autoUpdateSubnet = true): Promise<{ success: boolean; status: SystemStatus }> {
+    const res = await fetch('/api/interfaces/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interfaceName, autoUpdateSubnet }),
+    });
+    if (!res.ok) throw new Error('Failed to select network interface');
+    return res.json();
+  },
+
+  async toggleMonitoring(enabled?: boolean): Promise<{ active: boolean; mode: string; status?: SystemStatus }> {
+    const res = await fetch('/api/monitoring/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(enabled !== undefined ? { enabled } : {}),
+    });
+    if (!res.ok) throw new Error('Failed to toggle monitoring mode');
     return res.json();
   },
 
@@ -198,5 +225,26 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to run OS fingerprinting across all devices');
     return res.json();
+  },
+
+  async reportClientNetwork(details: {
+    connectionState: 'wifi' | 'ethernet' | 'both' | 'offline';
+    isOnline: boolean;
+    hasEthernet: boolean;
+    hasWifi: boolean;
+    networkType?: string;
+  }): Promise<{ success: boolean; status: SystemStatus }> {
+    try {
+      const res = await fetch('/api/client-network', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(details),
+      });
+      if (!res.ok) throw new Error('Failed to report client network status');
+      return res.json();
+    } catch (e: any) {
+      // Return fallback
+      return { success: false, status: null as any };
+    }
   },
 };

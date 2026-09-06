@@ -251,8 +251,16 @@ export interface SystemStatus {
   collectorType: 'linux' | 'macos' | 'windows' | 'mock';
   collectorActive: boolean;
   interfaceName: string;
+  interfaceDisplayName?: string;
+  interfaceType?: 'ethernet' | 'wifi' | 'loopback' | 'virtual' | 'link-local' | 'other';
+  isEthernet?: boolean;
+  isWifi?: boolean;
+  connectionState?: 'wifi' | 'ethernet' | 'both' | 'offline';
+  hasEthernet?: boolean;
+  hasWifi?: boolean;
+  isOffline?: boolean;
   subnet: string;
-  mode: 'learning' | 'monitoring';
+  mode: 'learning' | 'monitoring' | 'paused';
   totalDevices: number;
   onlineDevices: number;
   suspiciousDevices: number;
@@ -260,6 +268,21 @@ export interface SystemStatus {
   activeAlerts: number;
   uptimeSeconds: number;
   lastScanTimestamp: string;
+}
+
+export interface NetworkInterfaceInfo {
+  name: string;
+  displayName: string;
+  type: 'ethernet' | 'wifi' | 'loopback' | 'virtual' | 'link-local' | 'other';
+  isEthernet: boolean;
+  isWifi: boolean;
+  ipAddress?: string;
+  netmask?: string;
+  macAddress?: string;
+  subnet?: string;
+  broadcastAddress?: string;
+  isConnected: boolean;
+  isDefaultRoute: boolean;
 }
 
 export interface ResponseResult {

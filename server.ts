@@ -12,6 +12,11 @@ import { securityLabEngine } from './server/securityLab';
 import { osFingerprintEngine } from './server/osFingerprint';
 import { trafficMonitor } from './server/trafficMonitor';
 import { SystemStatus, TopologyData, TopologyNode, TopologyEdge, NetworkEvent } from './server/types';
+import {
+  getSystemNetworkInterfaces,
+  resolveTargetInterface,
+  NetworkInterfaceInfo,
+} from './server/interfaceDetector';
 
 const PORT = 3000;
 
@@ -23,6 +28,47 @@ async function startServer() {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   const clients = new Set<WebSocket>();
+
+  let activeInterfaceInfo: {
+    name: string;
+    displayName: string;
+    type: 'ethernet' | 'wifi' | 'loopback' | 'virtual' | 'link-local' | 'other';
+    isEthernet: boolean;
+    isWifi: boolean;
+    subnet: string;
+  } = {
+    name: 'auto',
+    displayName: 'Auto-Detect',
+    type: 'other',
+    isEthernet: false,
+    isWifi: false,
+    subnet: '',
+  };
+
+  let clientNetworkHint = {
+    connectionState: 'wifi' as 'wifi' | 'ethernet' | 'both' | 'offline',
+    isOnline: true,
+    hasEthernet: false,
+    hasWifi: false,
+    networkType: '',
+  };
+
+  async function refreshActiveInterface() {
+    try {
+      const settings = db.getSettings();
+      const resolved = await resolveTargetInterface(settings.interfaceName);
+      activeInterfaceInfo = {
+        name: resolved.name,
+        displayName: resolved.displayName,
+        type: resolved.isEthernet ? 'ethernet' : (resolved.isWifi ? 'wifi' : 'other'),
+        isEthernet: resolved.isEthernet,
+        isWifi: resolved.isWifi,
+        subnet: resolved.subnet || settings.subnet || '',
+      };
+    } catch {}
+  }
+
+  await refreshActiveInterface();
 
   wss.on('connection', (ws) => {
     clients.add(ws);
@@ -92,12 +138,62 @@ async function startServer() {
     const baseline = db.getBaseline();
     const settings = db.getSettings();
 
+    const isCollectorRunning = collectorManager.getIsMonitoring();
+    const effectiveInterface = settings.interfaceName === 'auto'
+      ? `auto (${activeInterfaceInfo.name})`
+      : (settings.interfaceName || activeInterfaceInfo.name);
+
+    const hostHasEthernet = Boolean(activeInterfaceInfo.isEthernet);
+    const hostHasWifi = Boolean(activeInterfaceInfo.isWifi);
+    const hasHostPhysical = hostHasEthernet || hostHasWifi;
+
+    let hasEthernet = false;
+    let hasWifi = false;
+    let isOffline = false;
+    let connectionState: 'wifi' | 'ethernet' | 'both' | 'offline' = 'wifi';
+
+    if (hasHostPhysical) {
+      hasEthernet = hostHasEthernet;
+      hasWifi = hostHasWifi;
+      if (hasEthernet && hasWifi) {
+        connectionState = 'both';
+      } else if (hasEthernet) {
+        connectionState = 'ethernet';
+      } else if (hasWifi) {
+        connectionState = 'wifi';
+      } else {
+        connectionState = 'offline';
+        isOffline = true;
+      }
+    } else {
+      // In container sandbox or when no physical host NIC: use client-side detection
+      if (!clientNetworkHint.isOnline || clientNetworkHint.connectionState === 'offline') {
+        connectionState = 'offline';
+        isOffline = true;
+        hasEthernet = false;
+        hasWifi = false;
+      } else {
+        connectionState = clientNetworkHint.connectionState;
+        hasEthernet = clientNetworkHint.hasEthernet || connectionState === 'ethernet' || connectionState === 'both';
+        hasWifi = clientNetworkHint.hasWifi || connectionState === 'wifi' || connectionState === 'both';
+        isOffline = false;
+      }
+    }
+
     return {
       collectorType: settings.collectorType,
-      collectorActive: true,
-      interfaceName: settings.interfaceName,
+      collectorActive: isCollectorRunning,
+      interfaceName: effectiveInterface,
+      interfaceDisplayName: activeInterfaceInfo.displayName,
+      interfaceType: activeInterfaceInfo.type,
+      isEthernet: hasEthernet,
+      isWifi: hasWifi,
+      connectionState,
+      hasEthernet,
+      hasWifi,
+      isOffline,
       subnet: settings.subnet,
-      mode: baseline.isLearning ? 'learning' : 'monitoring',
+      mode: baseline.isLearning ? 'learning' : (isCollectorRunning ? 'monitoring' : 'paused'),
       totalDevices: devices.length,
       onlineDevices: online.length,
       suspiciousDevices: suspicious.length,
@@ -202,6 +298,115 @@ async function startServer() {
   // Status
   app.get('/api/status', (req, res) => {
     res.json(getSystemStatus());
+  });
+
+  // Client Network Hint Reporting (Synchronizes browser-detected Ethernet / Wi-Fi / Offline)
+  app.post('/api/client-network', (req, res) => {
+    try {
+      const { connectionState, isOnline, hasEthernet, hasWifi, networkType } = req.body;
+      clientNetworkHint = {
+        connectionState: connectionState || (isOnline === false ? 'offline' : 'wifi'),
+        isOnline: isOnline !== undefined ? Boolean(isOnline) : true,
+        hasEthernet: Boolean(hasEthernet),
+        hasWifi: Boolean(hasWifi),
+        networkType: networkType || '',
+      };
+      broadcast('system.status', getSystemStatus());
+      res.json({ success: true, status: getSystemStatus() });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to update client network hint' });
+    }
+  });
+
+  // Network Interfaces (Ethernet & Wi-Fi Enumeration)
+  app.get('/api/interfaces', async (req, res) => {
+    try {
+      const ifaces = await getSystemNetworkInterfaces();
+      // Filter out internal loopback and internal link-local interfaces to prevent fake data
+      const physicalOrRoutable = ifaces.filter(
+        (i) => i.type !== 'loopback' && i.type !== 'link-local' && i.type !== 'virtual'
+      );
+      await refreshActiveInterface();
+      res.json(physicalOrRoutable);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to enumerate network interfaces' });
+    }
+  });
+
+  // Interface Selection Endpoint
+  app.post('/api/interfaces/select', async (req, res) => {
+    try {
+      const { interfaceName, autoUpdateSubnet = true } = req.body;
+      if (!interfaceName) {
+        return res.status(400).json({ error: 'interfaceName is required' });
+      }
+
+      const ifaces = await getSystemNetworkInterfaces();
+      const match = ifaces.find((i) => i.name === interfaceName);
+
+      const updates: any = { interfaceName };
+      if (autoUpdateSubnet && match?.subnet) {
+        updates.subnet = match.subnet;
+      }
+
+      db.updateSettings(updates);
+      await refreshActiveInterface();
+
+      broadcast('system.status', getSystemStatus());
+      res.json({
+        success: true,
+        status: getSystemStatus(),
+        selected: match || { name: interfaceName },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to select network interface' });
+    }
+  });
+
+  // Monitoring Mode Status & Toggle
+  app.get('/api/monitoring', (req, res) => {
+    res.json({
+      active: collectorManager.getIsMonitoring(),
+      mode: getSystemStatus().mode,
+    });
+  });
+
+  app.post('/api/monitoring/toggle', async (req, res) => {
+    const currentState = collectorManager.getIsMonitoring();
+    const targetState = req.body?.enabled !== undefined ? Boolean(req.body.enabled) : !currentState;
+
+    if (targetState) {
+      await collectorManager.start();
+      trafficMonitor.start();
+    } else {
+      await collectorManager.stop();
+      trafficMonitor.stop();
+    }
+
+    const event: NetworkEvent = {
+      id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      type: 'monitoring_event',
+      severity: 'info',
+      title: targetState ? 'Monitoring Mode Resumed' : 'Monitoring Mode Turned Off',
+      description: targetState
+        ? 'Real-time packet inspection, traffic telemetry, and active anomaly heuristics have been enabled.'
+        : 'Active network monitoring has been turned off. Background telemetry and packet capture are suspended.',
+      evidence: {
+        action: targetState ? 'resume' : 'pause',
+        collectorActive: targetState,
+        timestamp: new Date().toISOString(),
+      },
+      simulated: false,
+    };
+    db.addEvent(event);
+
+    const status = getSystemStatus();
+    broadcast('monitoring.updated', { active: targetState, mode: status.mode });
+    broadcast('system.status', status);
+    broadcast('event.created', event);
+
+    res.json({ active: targetState, mode: status.mode, status });
   });
 
   // Devices
@@ -429,6 +634,7 @@ async function startServer() {
 
   app.post('/api/settings', async (req, res) => {
     const updated = db.updateSettings(req.body);
+    await refreshActiveInterface();
     if (req.body.collectorType) {
       await collectorManager.setCollectorType(req.body.collectorType);
     }

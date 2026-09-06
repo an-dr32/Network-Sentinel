@@ -37,8 +37,8 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'sentinel_db.json');
 
 const INITIAL_SETTINGS = {
-  subnet: '192.168.1.0/24',
-  interfaceName: process.platform === 'darwin' ? 'en0' : 'eth0',
+  subnet: '',
+  interfaceName: 'auto',
   collectorType: (process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : 'mock') as 'linux' | 'macos' | 'windows' | 'mock',
   autoScanIntervalSeconds: 10,
   baselineDurationSeconds: 15,

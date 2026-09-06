@@ -10,9 +10,14 @@ import {
   RouterTrafficSummary,
 } from '../types';
 import { api } from '../utils/api';
+import { getBrowserConnectionState } from '../utils/networkDetector';
 
 interface NetworkContextType {
   status: SystemStatus | null;
+  connectionState: 'wifi' | 'ethernet' | 'both' | 'offline';
+  hasEthernet: boolean;
+  hasWifi: boolean;
+  isOffline: boolean;
   devices: Device[];
   events: NetworkEvent[];
   alerts: Alert[];
@@ -47,6 +52,8 @@ interface NetworkContextType {
   cancelDiscoveryScan: () => void;
   detectDeviceOs: (deviceId: string) => Promise<{ device: Device; fingerprint: any }>;
   detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
+  isMonitoringActive: boolean;
+  toggleMonitoringMode: (enabled?: boolean) => Promise<boolean>;
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
@@ -68,6 +75,72 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [scanRemainingSeconds, setScanRemainingSeconds] = useState(0);
   const [scanTotalSeconds, setScanTotalSeconds] = useState(0);
   const scanTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [optimisticMonitoring, setOptimisticMonitoring] = useState<boolean | null>(null);
+  const isMonitoringActive = optimisticMonitoring !== null
+    ? optimisticMonitoring
+    : (status ? (status.collectorActive !== false && status.mode !== 'paused') : true);
+
+  // Client-side automatic network state detection (Ethernet / Wi-Fi / Both / Offline)
+  const [clientNetwork, setClientNetwork] = useState(() => getBrowserConnectionState());
+
+  useEffect(() => {
+    const handleNetworkChange = () => {
+      const state = getBrowserConnectionState();
+      setClientNetwork(state);
+      api.reportClientNetwork({
+        connectionState: state.connectionState,
+        isOnline: state.isOnline,
+        hasEthernet: state.hasEthernet,
+        hasWifi: state.hasWifi,
+        networkType: state.networkType,
+      }).catch(() => {});
+    };
+
+    // Initial report
+    handleNetworkChange();
+
+    window.addEventListener('online', handleNetworkChange);
+    window.addEventListener('offline', handleNetworkChange);
+
+    const nav = typeof navigator !== 'undefined' ? (navigator as any) : null;
+    const connection = nav?.connection || nav?.mozConnection || nav?.webkitConnection;
+    if (connection && connection.addEventListener) {
+      connection.addEventListener('change', handleNetworkChange);
+    }
+
+    return () => {
+      window.removeEventListener('online', handleNetworkChange);
+      window.removeEventListener('offline', handleNetworkChange);
+      if (connection && connection.removeEventListener) {
+        connection.removeEventListener('change', handleNetworkChange);
+      }
+    };
+  }, []);
+
+  // Effective connection state combining server status and client detection
+  const isOffline = Boolean(
+    clientNetwork.isOffline ||
+    !clientNetwork.isOnline ||
+    status?.isOffline ||
+    status?.connectionState === 'offline'
+  );
+
+  const hasEthernet = Boolean(
+    !isOffline && (status?.hasEthernet || clientNetwork.hasEthernet || status?.isEthernet)
+  );
+
+  const hasWifi = Boolean(
+    !isOffline && (status?.hasWifi || clientNetwork.hasWifi || status?.isWifi)
+  );
+
+  const connectionState: 'wifi' | 'ethernet' | 'both' | 'offline' = isOffline
+    ? 'offline'
+    : (hasEthernet && hasWifi)
+    ? 'both'
+    : hasEthernet
+    ? 'ethernet'
+    : 'wifi';
 
   useEffect(() => {
     return () => {
@@ -190,6 +263,10 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         case 'topology.traffic':
           setTopologyTraffic(message.data);
           setTopology((prev) => (prev ? { ...prev, trafficSummary: message.data } : prev));
+          break;
+        case 'monitoring.updated':
+          setOptimisticMonitoring(null);
+          setStatus((prev) => (prev ? { ...prev, collectorActive: message.data.active, mode: message.data.mode } : prev));
           break;
       }
     }
@@ -434,10 +511,33 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return res;
   };
 
+  const toggleMonitoringMode = async (enabled?: boolean) => {
+    const target = enabled !== undefined ? enabled : !isMonitoringActive;
+    setOptimisticMonitoring(target);
+    try {
+      const res = await api.toggleMonitoring(target);
+      if (res?.status) {
+        setStatus(res.status);
+      } else {
+        await refreshAll();
+      }
+      setOptimisticMonitoring(null);
+      return res.active;
+    } catch (err) {
+      setOptimisticMonitoring(null);
+      console.error('Failed to toggle monitoring mode:', err);
+      throw err;
+    }
+  };
+
   return (
     <NetworkContext.Provider
       value={{
         status,
+        connectionState,
+        hasEthernet,
+        hasWifi,
+        isOffline,
         devices,
         events,
         alerts,
@@ -472,6 +572,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         cancelDiscoveryScan,
         detectDeviceOs,
         detectAllDevicesOs,
+        isMonitoringActive,
+        toggleMonitoringMode,
       }}
     >
       {children}
