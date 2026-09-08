@@ -41,14 +41,14 @@ interface NetworkContextType {
   resolveAlert: (alertId: string) => Promise<void>;
   triggerQuarantine: (deviceId: string, reason?: string) => Promise<void>;
   triggerRestore: (deviceId: string) => Promise<void>;
-  startBaselineLearning: (durationSeconds?: number) => Promise<void>;
+  startBaselineLearning: (durationSeconds?: number, isIndefinite?: boolean) => Promise<void>;
   finishBaselineLearning: () => Promise<void>;
   runSecurityLabScenario: (scenario: 'new_device' | 'port_scan' | 'dns_anomaly' | 'traffic_spike' | 'ip_change', payload?: any) => Promise<any>;
   resetSecurityLab: () => Promise<void>;
   isScanning: boolean;
   scanRemainingSeconds: number;
   scanTotalSeconds: number;
-  triggerDiscoveryScan: (durationSeconds?: number) => Promise<void>;
+  triggerDiscoveryScan: (durationSeconds?: number, isIndefinite?: boolean) => Promise<void>;
   cancelDiscoveryScan: () => void;
   detectDeviceOs: (deviceId: string) => Promise<{ device: Device; fingerprint: any }>;
   detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
@@ -395,9 +395,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await refreshAll();
   };
 
-  const startBaselineLearning = async (durationSeconds = 15) => {
-    const capped = Math.min(60, Math.max(5, durationSeconds));
-    await api.startLearning(capped);
+  const startBaselineLearning = async (durationSeconds = 15, isIndefinite = false) => {
+    await api.startLearning(durationSeconds, isIndefinite);
     await refreshAll();
   };
 
@@ -416,9 +415,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setScanTotalSeconds(0);
   };
 
-  const triggerDiscoveryScan = async (durationSeconds?: number) => {
-    const cappedDuration = durationSeconds && durationSeconds > 0 ? Math.min(60, Math.max(1, durationSeconds)) : 0;
-
+  const triggerDiscoveryScan = async (durationSeconds?: number, isIndefinite = false) => {
     if (scanTimerRef.current) {
       clearInterval(scanTimerRef.current);
       scanTimerRef.current = null;
@@ -426,18 +423,41 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setIsScanning(true);
 
-    if (cappedDuration > 0) {
-      setScanTotalSeconds(cappedDuration);
-      setScanRemainingSeconds(cappedDuration);
-
+    if (isIndefinite) {
+      // Indefinite / continuous scanning in overdrive mode
+      setScanTotalSeconds(0);
+      setScanRemainingSeconds(0);
       try {
-        await api.triggerScan(cappedDuration);
+        await api.triggerScan(0, true);
         await refreshAll();
       } catch (e) {
         console.error('Scan error:', e);
       }
 
-      let remaining = cappedDuration;
+      // Keep continuously sweeping every 4 seconds until manually canceled/stopped
+      scanTimerRef.current = setInterval(async () => {
+        try {
+          await api.triggerScan(0, true);
+          await refreshAll();
+        } catch {}
+      }, 4000);
+      return;
+    }
+
+    const duration = durationSeconds && durationSeconds > 0 ? durationSeconds : 0;
+
+    if (duration > 0) {
+      setScanTotalSeconds(duration);
+      setScanRemainingSeconds(duration);
+
+      try {
+        await api.triggerScan(duration);
+        await refreshAll();
+      } catch (e) {
+        console.error('Scan error:', e);
+      }
+
+      let remaining = duration;
       let tickCount = 0;
       scanTimerRef.current = setInterval(async () => {
         remaining -= 1;

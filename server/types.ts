@@ -140,6 +140,7 @@ export interface Alert {
 
 export interface BaselineFeatures {
   isLearning: boolean;
+  isIndefinite?: boolean;
   learningProgress: number;
   confidenceScore: number;
   devicesLearned: number;

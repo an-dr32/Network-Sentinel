@@ -241,7 +241,10 @@ export class Database {
 
   public updateSettings(updates: Partial<DatabaseSchema['settings']>) {
     if (updates.baselineDurationSeconds !== undefined) {
-      updates.baselineDurationSeconds = Math.min(60, Math.max(5, updates.baselineDurationSeconds));
+      // Support standard durations (min 5s), overdrive durations (>60s), and 0 (indefinite)
+      if (updates.baselineDurationSeconds > 0) {
+        updates.baselineDurationSeconds = Math.max(5, updates.baselineDurationSeconds);
+      }
     }
     this.data.settings = { ...this.data.settings, ...updates };
     this.save();

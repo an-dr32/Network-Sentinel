@@ -146,12 +146,14 @@ export const api = {
     return res.json();
   },
 
-  async startLearning(durationSeconds = 15): Promise<void> {
-    const capped = Math.min(60, Math.max(5, durationSeconds));
+  async startLearning(durationSeconds = 15, isIndefinite = false): Promise<void> {
     const res = await fetch('/api/baseline/start-learning', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ durationSeconds: capped }),
+      body: JSON.stringify({
+        durationSeconds: isIndefinite ? 0 : durationSeconds,
+        indefinite: isIndefinite,
+      }),
     });
     if (!res.ok) throw new Error('Failed to start learning');
   },
@@ -200,12 +202,12 @@ export const api = {
     return res.json();
   },
 
-  async triggerScan(durationSeconds?: number): Promise<{ count: number; devices: Device[]; durationSeconds?: number }> {
-    const capped = durationSeconds ? Math.min(60, Math.max(1, durationSeconds)) : undefined;
+  async triggerScan(durationSeconds?: number, isIndefinite = false): Promise<{ count: number; devices: Device[]; durationSeconds?: number }> {
+    const sec = isIndefinite ? 0 : (durationSeconds !== undefined ? Math.max(0, durationSeconds) : undefined);
     const res = await fetch('/api/discovery/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ durationSeconds: capped }),
+      body: JSON.stringify({ durationSeconds: sec, indefinite: isIndefinite }),
     });
     if (!res.ok) throw new Error('Failed to trigger discovery scan');
     return res.json();

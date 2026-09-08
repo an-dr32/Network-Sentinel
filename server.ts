@@ -411,7 +411,30 @@ async function startServer() {
 
   // Devices
   app.get('/api/devices', (req, res) => {
-    res.json(db.getDevices());
+    const devices = db.getDevices();
+    // Dynamically evaluate compounded risk scores so they reflect current ports, alerts, and trust status
+    const evaluated = devices.map((dev) => {
+      const evaluation = detectionEngine.evaluateDeviceRisk(dev);
+      if (
+        dev.riskScore !== evaluation.score ||
+        dev.riskSeverity !== evaluation.severity ||
+        (dev.riskEvidence?.length || 0) !== evaluation.evidence.length
+      ) {
+        db.updateDevice(dev.id, {
+          riskScore: evaluation.score,
+          riskSeverity: evaluation.severity,
+          riskEvidence: evaluation.evidence,
+        });
+        return {
+          ...dev,
+          riskScore: evaluation.score,
+          riskSeverity: evaluation.severity,
+          riskEvidence: evaluation.evidence,
+        };
+      }
+      return dev;
+    });
+    res.json(evaluated);
   });
 
   app.get('/api/devices/:id', (req, res) => {
@@ -419,7 +442,13 @@ async function startServer() {
     if (!device) {
       return res.status(404).json({ error: 'Device not found' });
     }
-    res.json(device);
+    const evaluation = detectionEngine.evaluateDeviceRisk(device);
+    const updated = db.updateDevice(device.id, {
+      riskScore: evaluation.score,
+      riskSeverity: evaluation.severity,
+      riskEvidence: evaluation.evidence,
+    }) || device;
+    res.json(updated);
   });
 
   app.post('/api/devices/:id/trust', (req, res) => {
@@ -581,10 +610,19 @@ async function startServer() {
   });
 
   app.post('/api/baseline/start-learning', (req, res) => {
-    const raw = parseInt(req.body?.durationSeconds) || db.getSettings()?.baselineDurationSeconds || 15;
-    const duration = Math.min(60, Math.max(5, raw));
+    const isIndefinite = req.body?.indefinite === true || req.body?.durationSeconds === 0;
+    const raw = parseInt(req.body?.durationSeconds);
+    const duration = isIndefinite
+      ? 0
+      : (raw && raw > 0 ? Math.max(5, raw) : (db.getSettings()?.baselineDurationSeconds || 15));
     baselineManager.startLearning(duration);
-    res.json({ message: `Baseline learning initiated for ${duration} seconds.`, durationSeconds: duration });
+    res.json({
+      message: isIndefinite
+        ? 'Baseline learning initiated indefinitely (overdrive mode).'
+        : `Baseline learning initiated for ${duration} seconds.`,
+      durationSeconds: duration,
+      isIndefinite,
+    });
   });
 
   app.post('/api/baseline/finish-learning', (req, res) => {
@@ -665,12 +703,19 @@ async function startServer() {
 
     try {
       const result = await osFingerprintEngine.fingerprintDevice(device);
-      const updated = db.updateDevice(device.id, {
+      const intermediate = db.updateDevice(device.id, {
         osGuess: result.osGuess,
         osConfidence: result.confidence,
         osDetectionDetails: result.details,
         deviceType: result.deviceType,
         openPorts: result.openPorts,
+      })!;
+
+      const evaluation = detectionEngine.evaluateDeviceRisk(intermediate);
+      const updated = db.updateDevice(intermediate.id, {
+        riskScore: evaluation.score,
+        riskSeverity: evaluation.severity,
+        riskEvidence: evaluation.evidence,
       })!;
 
       const event: NetworkEvent = {
@@ -714,12 +759,18 @@ async function startServer() {
     for (const dev of devices) {
       try {
         const fp = await osFingerprintEngine.fingerprintDevice(dev);
-        const updated = db.updateDevice(dev.id, {
+        const intermediate = db.updateDevice(dev.id, {
           osGuess: fp.osGuess,
           osConfidence: fp.confidence,
           osDetectionDetails: fp.details,
           deviceType: fp.deviceType,
           openPorts: fp.openPorts,
+        })!;
+        const evaluation = detectionEngine.evaluateDeviceRisk(intermediate);
+        const updated = db.updateDevice(intermediate.id, {
+          riskScore: evaluation.score,
+          riskSeverity: evaluation.severity,
+          riskEvidence: evaluation.evidence,
         })!;
         results.push(updated);
         broadcast('device.updated', updated);
@@ -735,8 +786,8 @@ async function startServer() {
 
   // Discovery Trigger
   app.post('/api/discovery/scan', async (req, res) => {
-    const raw = parseInt(req.body?.durationSeconds) || 0;
-    const durationSeconds = Math.min(60, Math.max(0, raw));
+    const raw = req.body?.durationSeconds !== undefined ? parseInt(req.body.durationSeconds) : 0;
+    const durationSeconds = raw > 0 ? raw : 0;
     const activeDiscoveredDevices = await collectorManager.discoverNow();
 
     // Set of active discovered MAC addresses
@@ -777,11 +828,21 @@ async function startServer() {
       }
     }
 
+    // Re-evaluate risk for all devices so compounding scores update immediately
+    for (const dev of db.getDevices()) {
+      const evaluation = detectionEngine.evaluateDeviceRisk(dev);
+      db.updateDevice(dev.id, {
+        riskScore: evaluation.score,
+        riskSeverity: evaluation.severity,
+        riskEvidence: evaluation.evidence,
+      });
+    }
+
     const currentDevices = db.getDevices();
     broadcast('devices.updated', currentDevices);
     broadcast('system.status', getSystemStatus());
     broadcast('topology.updated', generateTopologyData());
-    res.json({ count: currentDevices.length, devices: currentDevices });
+    res.json({ count: currentDevices.length, devices: currentDevices, durationSeconds });
   });
 
   // Vite Middleware in dev or static serving in production
