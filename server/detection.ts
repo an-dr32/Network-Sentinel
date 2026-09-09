@@ -187,7 +187,7 @@ export class DetectionEngine {
       evidence.push({
         rule: `Active Alert: ${alert.title}`,
         points: alertWeight,
-        reason: alert.description || `Unresolved security alert (${alert.severity.toUpperCase()} tier).`,
+        reason: alert.description || `Unresolved security alert (${(alert.severity || 'NORMAL').toUpperCase()} tier).`,
         timestamp: alert.createdAt || now,
       });
     }

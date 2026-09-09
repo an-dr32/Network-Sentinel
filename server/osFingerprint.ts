@@ -437,8 +437,8 @@ export class OsFingerprintEngine {
         });
 
         if (r.banner) {
-          banners[r.service] = r.banner;
-          identifiedBanners.push(`${r.service.toUpperCase()}: ${r.banner}`);
+          if (r.service) banners[r.service] = r.banner;
+          identifiedBanners.push(`${(r.service || 'SERVICE').toUpperCase()}: ${r.banner}`);
         }
 
         if (port === 445 || port === 135 || port === 139) hasSmb = true;

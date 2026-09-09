@@ -109,9 +109,11 @@ export class MacosCollector implements NetworkCollector {
     }
 
     // 4. Parse ARP table on macOS (covering both Ethernet and Wi-Fi interfaces)
+    let arpLineCount = 0;
     try {
       const { stdout } = await execAsync('arp -a');
       const lines = stdout.trim().split('\n');
+      arpLineCount = lines.length;
 
       // Typical output:
       // ? (192.168.1.1) at 3c:22:fb:aa:bb:cc on en0 ifscope [ethernet]
@@ -152,23 +154,6 @@ export class MacosCollector implements NetworkCollector {
 
         const connTypeTag = entryIsEthernet ? 'ethernet' : 'wifi';
 
-        const isLive = isGateway ? true : await isHostReachable(ip, iface);
-
-        if (!isLive) {
-          if (existing) {
-            if (existing.status === 'online') {
-              db.updateDevice(existing.id, {
-                status: 'offline',
-                trafficStats: {
-                  ...existing.trafficStats,
-                  rateKbps: 0,
-                },
-              });
-            }
-          }
-          continue;
-        }
-
         if (existing) {
           existing.lastSeen = now;
           existing.status = 'online';
@@ -205,7 +190,7 @@ export class MacosCollector implements NetworkCollector {
                   {
                     rule: 'New unverified device',
                     points: 20,
-                    reason: `Discovered via macOS neighbor table on ${iface} (${connTypeTag.toUpperCase()})`,
+                    reason: `Discovered via macOS neighbor table on ${iface} (${(connTypeTag || 'network').toUpperCase()})`,
                     timestamp: now,
                   },
                 ],
@@ -233,7 +218,7 @@ export class MacosCollector implements NetworkCollector {
               deviceId: newDev.id,
               deviceName: newDev.hostname,
               deviceIp: ip,
-              title: `New Device Discovered on ${iface} (${connTypeTag.toUpperCase()})`,
+              title: `New Device Discovered on ${iface} (${(connTypeTag || 'network').toUpperCase()})`,
               description: `Hardware ${mac} (${newDev.vendor}) detected on macOS interface ${iface} via ${connTypeTag}.`,
               evidence: {
                 interface: iface,
@@ -252,6 +237,12 @@ export class MacosCollector implements NetworkCollector {
     }
 
     // 5. Evaluate all other registered devices:
+    // If running in a container/isolated environment where arpLineCount is 0,
+    // preserve current active devices rather than marking everything offline.
+    if (arpLineCount <= 1 && devices.length === 0) {
+      return db.getDevices().filter((d) => d.status === 'online');
+    }
+
     // If a device in DB was marked 'online' but was NOT observed in the ARP cache,
     // verify if it is still answering ping reachability probes. If unreachable, transition to 'offline' (Historic).
     const activeMacs = new Set(devices.map((d) => d.macAddress.toLowerCase()));

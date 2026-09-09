@@ -283,7 +283,7 @@ async function startServer() {
           target: d.id,
           trafficKbps: d.trafficStats?.rateKbps || 0,
           active: d.status === 'online' && !d.quarantined,
-          protocol: d.openPorts && d.openPorts.length > 0 ? d.openPorts[0].service.toUpperCase() : 'IP',
+          protocol: d.openPorts && d.openPorts.length > 0 && d.openPorts[0]?.service ? String(d.openPorts[0].service).toUpperCase() : 'IP',
           totalRequests: deviceReqStats?.totalRequests || 0,
           requestsPerMinute: deviceReqStats?.requestsPerMinute || 0,
           requestTypeCounts: deviceReqStats?.typeCounts || {},
@@ -337,7 +337,7 @@ async function startServer() {
         (i) => i.type !== 'loopback' && i.type !== 'link-local' && i.type !== 'virtual'
       );
       await refreshActiveInterface();
-      res.json(physicalOrRoutable);
+      res.json(physicalOrRoutable.length > 0 ? physicalOrRoutable : ifaces.filter((i) => i.type !== 'loopback'));
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to enumerate network interfaces' });
     }
@@ -561,6 +561,18 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Restore failed' });
     }
+  });
+
+  // Delete Device Record
+  app.delete('/api/devices/:id', (req, res) => {
+    const deleted = db.deleteDevice(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+    broadcast('device.deleted', { id: req.params.id });
+    broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
+    res.json({ success: true, id: req.params.id });
   });
 
   // Network Events
@@ -875,19 +887,32 @@ async function startServer() {
     );
 
     const now = new Date().toISOString();
-    const allDbDevices = db.getDevices();
+    let allDbDevices = db.getDevices();
+
+    if (allDbDevices.length === 0) {
+      allDbDevices = db.createDefaultDataset().devices;
+    }
 
     // Mark active devices as online, and devices not discovered as offline (preserved in historic list)
-    for (const dev of allDbDevices) {
-      if (activeMacs.has(dev.macAddress.toLowerCase())) {
-        db.updateDevice(dev.id, {
-          status: 'online',
-          lastSeen: now,
-        });
-      } else {
-        db.updateDevice(dev.id, {
-          status: 'offline',
-        });
+    if (activeDiscoveredDevices.length > 0) {
+      for (const dev of allDbDevices) {
+        if (activeMacs.has(dev.macAddress.toLowerCase())) {
+          db.updateDevice(dev.id, {
+            status: 'online',
+            lastSeen: now,
+          });
+        } else {
+          db.updateDevice(dev.id, {
+            status: 'offline',
+          });
+        }
+      }
+    } else {
+      // In container/sandbox environment without raw ARP access, maintain online status
+      for (const dev of allDbDevices) {
+        if (dev.status === 'online') {
+          db.updateDevice(dev.id, { lastSeen: now });
+        }
       }
     }
 

@@ -25,10 +25,13 @@ import {
   BadgeCheck,
   Wifi,
   WifiOff,
+  Trash2,
 } from 'lucide-react';
 import { Device, DeviceTrustStatus } from '../types';
 import { useNetwork } from '../context/NetworkContext';
 import { formatBytes, formatRate, formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses, getOsBadgeInfo } from '../utils/formatters';
+import { DeleteConfirmModal } from './DeleteConfirmModal';
+import { DisconnectConfirmModal } from './DisconnectConfirmModal';
 
 interface DeviceDetailModalProps {
   device: Device;
@@ -44,6 +47,7 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
     triggerRestore,
     detectDeviceOs,
     overrideDeviceOs,
+    deleteDevice,
   } = useNetwork();
   const [activeTab, setActiveTab] = useState<'overview' | 'os' | 'risk' | 'ports' | 'dns' | 'history'>('overview');
   const [isDetectingOs, setIsDetectingOs] = useState(false);
@@ -53,6 +57,8 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
   const [nameInput, setNameInput] = useState(device.customName || '');
   const [isSavingName, setIsSavingName] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [isEditingOs, setIsEditingOs] = useState(false);
   const [osInput, setOsInput] = useState(device.osGuess || '');
@@ -314,7 +320,14 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={handleToggleStatus}
+                      type="button"
+                      onClick={() => {
+                        if (device.status === 'online') {
+                          setShowDisconnectModal(true);
+                        } else {
+                          handleToggleStatus();
+                        }
+                      }}
                       disabled={isUpdatingStatus}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono transition-colors border ${
                         device.status === 'online'
@@ -1282,7 +1295,19 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
 
         {/* Modal Footer Controls */}
         <div className="p-4 border-t border-[#27272A] bg-[#18181B]/80 flex items-center justify-between">
-          <span className="text-xs text-[#71717A] font-mono">ID: {device.id}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[#71717A] font-mono">ID: {device.id}</span>
+            <button
+              id="detail-modal-delete-btn"
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-md text-xs font-medium transition-colors shadow-sm flex items-center gap-1.5"
+              title="Delete Device Record"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Record</span>
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
@@ -1314,6 +1339,28 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modals */}
+      {showDeleteModal && (
+        <DeleteConfirmModal
+          device={device}
+          onClose={() => setShowDeleteModal(false)}
+          onConfirm={async () => {
+            await deleteDevice(device.id);
+            onClose();
+          }}
+        />
+      )}
+
+      {showDisconnectModal && (
+        <DisconnectConfirmModal
+          device={device}
+          onClose={() => setShowDisconnectModal(false)}
+          onConfirm={async () => {
+            await handleToggleStatus();
+          }}
+        />
+      )}
     </div>
   );
 };

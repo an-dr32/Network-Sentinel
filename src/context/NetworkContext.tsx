@@ -41,6 +41,7 @@ interface NetworkContextType {
   resolveAlert: (alertId: string) => Promise<void>;
   triggerQuarantine: (deviceId: string, reason?: string) => Promise<void>;
   triggerRestore: (deviceId: string) => Promise<void>;
+  deleteDevice: (deviceId: string) => Promise<void>;
   startBaselineLearning: (durationSeconds?: number, isIndefinite?: boolean) => Promise<void>;
   finishBaselineLearning: () => Promise<void>;
   runSecurityLabScenario: (scenario: 'new_device' | 'port_scan' | 'dns_anomaly' | 'traffic_spike' | 'ip_change', payload?: any) => Promise<any>;
@@ -402,6 +403,15 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await refreshAll();
   };
 
+  const deleteDevice = async (deviceId: string) => {
+    await api.deleteDevice(deviceId);
+    setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+    if (selectedDevice?.id === deviceId) {
+      setSelectedDevice(null);
+    }
+    await refreshAll();
+  };
+
   const startBaselineLearning = async (durationSeconds = 15, isIndefinite = false) => {
     await api.startLearning(durationSeconds, isIndefinite);
     await refreshAll();
@@ -602,6 +612,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         resolveAlert,
         triggerQuarantine,
         triggerRestore,
+        deleteDevice,
         startBaselineLearning,
         finishBaselineLearning,
         runSecurityLabScenario,

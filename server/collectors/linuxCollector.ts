@@ -110,7 +110,7 @@ export class LinuxCollector implements NetworkCollector {
       const neighLines = neighOut.trim().split('\n');
       for (const line of neighLines) {
         // e.g. "192.168.1.1 dev eth0 lladdr 00:11:22:33:44:55 REACHABLE"
-        const upper = line.toUpperCase();
+        const upper = (line || '').toUpperCase();
         // Ignore failed or incomplete neighbor records
         if (upper.includes('FAILED') || upper.includes('INCOMPLETE') || upper.includes('NONE')) {
           continue;
@@ -156,7 +156,7 @@ export class LinuxCollector implements NetworkCollector {
     }
 
     for (const entry of observedEntries) {
-      const { ip, mac, iface, guaranteedReachable } = entry;
+      const { ip, mac, iface } = entry;
       const isGateway = ip === defaultGwIp || ip.endsWith('.1');
       const entryIsEthernet =
         iface === activeIface
@@ -170,26 +170,6 @@ export class LinuxCollector implements NetworkCollector {
       const connTag = entryIsEthernet ? 'ethernet' : 'wifi';
 
       const existing = db.getDeviceByMac(mac);
-
-      // Verify active reachability: if guaranteed by kernel (REACHABLE/PERMANENT), it's online.
-      // Otherwise, probe actively so stale historic entries are NOT marked online.
-      const isLive = guaranteedReachable ? true : await isHostReachable(ip, iface);
-
-      if (!isLive) {
-        if (existing) {
-          if (existing.status === 'online') {
-            db.updateDevice(existing.id, {
-              status: 'offline',
-              trafficStats: {
-                ...existing.trafficStats,
-                rateKbps: 0,
-              },
-            });
-          }
-        }
-        // Disconnected/historic entry - do NOT add to active devices list
-        continue;
-      }
 
       if (existing) {
         existing.lastSeen = now;
@@ -234,7 +214,7 @@ export class LinuxCollector implements NetworkCollector {
                 {
                   rule: 'New unverified device',
                   points: 20,
-                  reason: `Discovered via Linux neighbor table on ${iface} (${connTag.toUpperCase()})`,
+                  reason: `Discovered via Linux neighbor table on ${iface} (${(connTag || 'network').toUpperCase()})`,
                   timestamp: now,
                 },
               ],
@@ -288,7 +268,7 @@ export class LinuxCollector implements NetworkCollector {
             deviceId: newDev.id,
             deviceName: newDev.hostname,
             deviceIp: ip,
-            title: `New Device Discovered on ${iface} (${connTag.toUpperCase()})`,
+            title: `New Device Discovered on ${iface} (${(connTag || 'network').toUpperCase()})`,
             description: `Hardware ${mac} (${newDev.vendor}) detected on Linux interface ${iface} via ${connTag}.`,
             evidence: {
               interface: iface,
@@ -304,6 +284,12 @@ export class LinuxCollector implements NetworkCollector {
     }
 
     // 5. Evaluate all other registered devices:
+    // If running in a container/isolated environment where observedEntries is 0,
+    // preserve current active devices rather than marking everything offline.
+    if (observedEntries.length === 0 && devices.length === 0) {
+      return db.getDevices().filter((d) => d.status === 'online');
+    }
+
     // If a device in DB was marked 'online' but was NOT observed in the ARP/neighbor cache,
     // verify if it is still answering ping reachability probes. If unreachable, transition to 'offline' (Historic).
     const activeMacs = new Set(devices.map((d) => d.macAddress.toLowerCase()));

@@ -28,6 +28,7 @@ import {
 import { useNetwork } from '../context/NetworkContext';
 import { Device, DeviceTrustStatus, RiskSeverity } from '../types';
 import { formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses, getOsBadgeInfo } from '../utils/formatters';
+import { DeviceActionsDropdown } from './DeviceActionsDropdown';
 
 export const DevicesView: React.FC = () => {
   const {
@@ -35,6 +36,7 @@ export const DevicesView: React.FC = () => {
     setSelectedDevice,
     setQuarantineTarget,
     triggerRestore,
+    deleteDevice,
     detectDeviceOs,
     detectAllDevicesOs,
     updateDeviceName,
@@ -553,54 +555,33 @@ export const DevicesView: React.FC = () => {
                           </span>
                         </td>
 
-                        {/* Actions */}
-                        <td className="px-4 py-3.5 text-right space-x-2">
-                          <button
-                            onClick={() => setSelectedDevice(device)}
-                            className="px-2.5 py-1 bg-[#18181B] hover:bg-zinc-700 text-[#FAFAFA] rounded border border-[#27272A] text-xs transition-colors"
-                          >
-                            Inspect
-                          </button>
-                          {device.status === 'online' ? (
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                await updateDeviceStatus(device.id, 'offline');
-                              }}
-                              className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 rounded border border-zinc-700 text-xs transition-colors"
-                              title="Disconnect node and move to Historic list"
-                            >
-                              Disconnect
-                            </button>
-                          ) : (
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                await updateDeviceStatus(device.id, 'online');
-                              }}
-                              className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 rounded border border-emerald-800/60 text-xs transition-colors"
-                              title="Mark node as reconnected and active"
-                            >
-                              Reconnect
-                            </button>
-                          )}
-                          {device.quarantined ? (
-                            <button
-                              onClick={() => triggerRestore(device.id)}
-                              className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800/60 text-xs transition-colors"
-                              title="Restore network access"
-                            >
-                              Restore
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => setQuarantineTarget(device)}
-                              className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900/60 text-red-300 rounded border border-red-800/50 text-xs transition-colors"
-                              title="Isolate device from local network"
-                            >
-                              Quarantine
-                            </button>
-                          )}
+                        {/* Actions Dropdown */}
+                        <td className="px-4 py-3.5 text-right">
+                          <DeviceActionsDropdown
+                            device={device}
+                            onInspect={() => setSelectedDevice(device)}
+                            onStartRename={() => {
+                              setEditingDeviceId(device.id);
+                              setEditingName(device.customName || device.hostname || '');
+                            }}
+                            onFingerprint={async () => {
+                              setDetectingDeviceId(device.id);
+                              try {
+                                await detectDeviceOs(device.id);
+                              } finally {
+                                setDetectingDeviceId(null);
+                              }
+                            }}
+                            isFingerprinting={detectingDeviceId === device.id}
+                            onToggleStatus={async () => {
+                              await updateDeviceStatus(device.id, device.status === 'online' ? 'offline' : 'online');
+                            }}
+                            onQuarantine={() => setQuarantineTarget(device)}
+                            onRestore={() => triggerRestore(device.id)}
+                            onDelete={() => deleteDevice(device.id)}
+                            align="right"
+                            variant="labeled"
+                          />
                         </td>
                       </tr>
                     );
@@ -714,8 +695,19 @@ export const DevicesView: React.FC = () => {
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
+                      onClick={() => setSelectedDevice(device)}
+                      className="px-2.5 py-1 bg-[#18181B] hover:bg-zinc-700 text-[#FAFAFA] rounded border border-[#27272A] text-xs transition-colors"
+                    >
+                      Inspect
+                    </button>
+                    <DeviceActionsDropdown
+                      device={device}
+                      onInspect={() => setSelectedDevice(device)}
+                      onStartRename={() => {
+                        setEditingDeviceId(device.id);
+                        setEditingName(device.customName || device.hostname || '');
+                      }}
+                      onFingerprint={async () => {
                         setDetectingDeviceId(device.id);
                         try {
                           await detectDeviceOs(device.id);
@@ -723,56 +715,16 @@ export const DevicesView: React.FC = () => {
                           setDetectingDeviceId(null);
                         }
                       }}
-                      disabled={detectingDeviceId === device.id}
-                      className="p-1.5 bg-[#18181B] hover:bg-zinc-700 text-zinc-400 hover:text-emerald-400 rounded border border-[#27272A] text-xs transition-colors"
-                      title="Fingerprint device OS"
-                    >
-                      <Fingerprint className={`w-3.5 h-3.5 ${detectingDeviceId === device.id ? 'animate-spin text-emerald-400' : ''}`} />
-                    </button>
-                    <button
-                      onClick={() => setSelectedDevice(device)}
-                      className="px-2.5 py-1 bg-[#18181B] hover:bg-zinc-700 text-[#FAFAFA] rounded border border-[#27272A] text-xs transition-colors"
-                    >
-                      Inspect
-                    </button>
-                    {device.status === 'online' ? (
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await updateDeviceStatus(device.id, 'offline');
-                        }}
-                        className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 rounded border border-zinc-700 text-xs transition-colors"
-                        title="Disconnect node and move to Historic list"
-                      >
-                        Disconnect
-                      </button>
-                    ) : (
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await updateDeviceStatus(device.id, 'online');
-                        }}
-                        className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 rounded border border-emerald-800/60 text-xs transition-colors"
-                        title="Mark node as reconnected and active"
-                      >
-                        Reconnect
-                      </button>
-                    )}
-                    {device.quarantined ? (
-                      <button
-                        onClick={() => triggerRestore(device.id)}
-                        className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800/60 text-xs"
-                      >
-                        Restore
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setQuarantineTarget(device)}
-                        className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900/60 text-red-300 rounded border border-red-800/50 text-xs"
-                      >
-                        Quarantine
-                      </button>
-                    )}
+                      isFingerprinting={detectingDeviceId === device.id}
+                      onToggleStatus={async () => {
+                        await updateDeviceStatus(device.id, device.status === 'online' ? 'offline' : 'online');
+                      }}
+                      onQuarantine={() => setQuarantineTarget(device)}
+                      onRestore={() => triggerRestore(device.id)}
+                      onDelete={() => deleteDevice(device.id)}
+                      align="right"
+                      variant="icon"
+                    />
                   </div>
                 </div>
               </div>

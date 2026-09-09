@@ -216,7 +216,7 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase bg-zinc-900/80 border border-zinc-700/60">
-            {connectionState.toUpperCase()}
+            {(connectionState || 'offline').toUpperCase()}
           </span>
         </div>
 
@@ -244,7 +244,7 @@ export const SettingsView: React.FC = () => {
                   <div>
                     <span className="text-xs font-semibold text-[#FAFAFA]">Auto-Detect (Prefers Ethernet)</span>
                     <span className="text-[10px] font-mono text-emerald-400 block">
-                      Active: {connectionState.toUpperCase()}
+                      Active: {(connectionState || 'offline').toUpperCase()}
                     </span>
                   </div>
                 </div>
@@ -267,7 +267,7 @@ export const SettingsView: React.FC = () => {
                   <span className="text-xs font-medium text-zinc-400">No Physical Host NICs Listed</span>
                 </div>
                 <p className="text-[11px] text-zinc-500 mt-2">
-                  Host system reports no secondary physical network cards. Real-time client network probing is active ({connectionState.toUpperCase()}). Only genuinely detected hardware is displayed.
+                  Host system reports no secondary physical network cards. Real-time client network probing is active ({(connectionState || 'offline').toUpperCase()}). Only genuinely detected hardware is displayed.
                 </p>
               </div>
             ) : (

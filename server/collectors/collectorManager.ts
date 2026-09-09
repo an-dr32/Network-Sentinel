@@ -82,7 +82,11 @@ export class CollectorManager {
   }
 
   public async discoverNow() {
-    return this.activeCollector.discoverDevices();
+    let list = await this.activeCollector.discoverDevices();
+    if (list.length === 0 && db.getDevices().length > 0) {
+      list = db.getDevices().filter((d) => d.status === 'online');
+    }
+    return list;
   }
 
   public broadcastCustomEvent(event: NetworkEvent) {

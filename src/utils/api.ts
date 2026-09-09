@@ -105,6 +105,14 @@ export const api = {
     return res.json();
   },
 
+  async deleteDevice(id: string): Promise<{ success: boolean; id: string }> {
+    const res = await fetch(`/api/devices/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete device');
+    return res.json();
+  },
+
   async getEvents(limit = 100): Promise<NetworkEvent[]> {
     const res = await fetch(`/api/events?limit=${limit}`);
     if (!res.ok) throw new Error('Failed to fetch network events');

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, ShieldAlert, X, Lock } from 'lucide-react';
 import { Device } from '../types';
 import { useNetwork } from '../context/NetworkContext';
@@ -25,7 +26,7 @@ export const QuarantineConfirmModal: React.FC<QuarantineConfirmModalProps> = ({ 
     }
   };
 
-  return (
+  const modalContent = (
     <div
       id="quarantine-confirm-overlay"
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
@@ -33,7 +34,7 @@ export const QuarantineConfirmModal: React.FC<QuarantineConfirmModalProps> = ({ 
     >
       <div
         id="quarantine-confirm-modal"
-        className="bg-[#111113] border border-red-800/80 rounded-xl w-full max-w-lg p-6 shadow-2xl space-y-5"
+        className="bg-[#111113] border border-red-800/80 rounded-xl w-full max-w-lg p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150 text-left"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -119,4 +120,6 @@ export const QuarantineConfirmModal: React.FC<QuarantineConfirmModalProps> = ({ 
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 };
