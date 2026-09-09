@@ -5,7 +5,7 @@ import { NetworkCollector } from './collector.interface';
 import { Device, NetworkEvent } from '../types';
 import { db } from '../db';
 import { lookupOuiVendor } from '../ouiDatabase';
-import { resolveTargetInterface, warmNeighborCache } from '../interfaceDetector';
+import { resolveTargetInterface, warmNeighborCache, isHostReachable } from '../interfaceDetector';
 
 const execAsync = promisify(exec);
 
@@ -30,6 +30,7 @@ export class MacosCollector implements NetworkCollector {
   }
 
   public async discoverDevices(): Promise<Device[]> {
+    const devices: Device[] = [];
     const now = new Date().toISOString();
     const settings = db.getSettings();
 
@@ -62,7 +63,15 @@ export class MacosCollector implements NetworkCollector {
         const hostIp = ipv4Info.address;
         const hostName = os.hostname() || `macbook-${hostIp.replace(/\./g, '-')}.local`;
 
-        if (!db.getDeviceByMac(mac)) {
+        const existingHost = db.getDeviceByMac(mac);
+        if (existingHost) {
+          const updatedHost = db.updateDevice(existingHost.id, {
+            status: 'online',
+            lastSeen: now,
+            currentIp: hostIp,
+          })!;
+          devices.push(updatedHost);
+        } else {
           const hostDev: Device = {
             id: `dev_${mac.replace(/:/g, '')}`,
             macAddress: mac,
@@ -92,6 +101,7 @@ export class MacosCollector implements NetworkCollector {
             tags: ['workstation', 'primary-host', activeIface, isEthernet ? 'ethernet' : 'wifi'],
           };
           db.addDevice(hostDev);
+          devices.push(hostDev);
         }
       }
     } catch (err) {
@@ -151,7 +161,10 @@ export class MacosCollector implements NetworkCollector {
             existing.tags.push('gateway', 'infrastructure');
             existing.deviceType = 'router';
           }
-          db.updateDevice(existing.id, existing);
+          const updated = db.updateDevice(existing.id, existing)!;
+          if (!devices.some((d) => d.id === updated.id)) {
+            devices.push(updated);
+          }
         } else {
           const newDev: Device = {
             id: `dev_${mac.replace(/:/g, '')}`,
@@ -192,6 +205,7 @@ export class MacosCollector implements NetworkCollector {
           };
 
           db.addDevice(newDev);
+          devices.push(newDev);
 
           if (this.eventCallback) {
             this.eventCallback({
@@ -220,8 +234,56 @@ export class MacosCollector implements NetworkCollector {
       console.warn('macOS collector arp read error:', err);
     }
 
-    return db.getDevices();
+    // 5. Evaluate all other registered devices:
+    // If a device in DB was marked 'online' but was NOT observed in the ARP cache,
+    // verify if it is still answering ping reachability probes. If unreachable, transition to 'offline' (Historic).
+    const activeMacs = new Set(devices.map((d) => d.macAddress.toLowerCase()));
+    const allDbDevices = db.getDevices();
+
+    for (const dev of allDbDevices) {
+      if (!activeMacs.has(dev.macAddress.toLowerCase())) {
+        if (dev.status === 'online') {
+          const reachable = await isHostReachable(dev.currentIp, activeIface);
+          if (reachable) {
+            const refreshed = db.updateDevice(dev.id, {
+              status: 'online',
+              lastSeen: now,
+            })!;
+            if (!devices.some((d) => d.id === refreshed.id)) {
+              devices.push(refreshed);
+            }
+          } else {
+            db.updateDevice(dev.id, {
+              status: 'offline',
+            });
+            if (this.eventCallback) {
+              this.eventCallback({
+                id: `evt_off_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                timestamp: now,
+                type: 'device_offline',
+                severity: 'info',
+                deviceId: dev.id,
+                deviceName: dev.customName || dev.hostname,
+                deviceIp: dev.currentIp,
+                title: `Device Disconnected (${dev.customName || dev.hostname})`,
+                description: `Node ${dev.macAddress} did not respond on ${activeIface} and moved to historic list.`,
+                evidence: {
+                  mac: dev.macAddress,
+                  ip: dev.currentIp,
+                  interface: activeIface,
+                },
+                simulated: false,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Return ONLY actively verified online devices
+    return devices;
   }
+
 
   public async startMonitoring(onEvent: (event: NetworkEvent) => void): Promise<void> {
     this.eventCallback = onEvent;

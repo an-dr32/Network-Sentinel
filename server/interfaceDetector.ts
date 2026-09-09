@@ -336,3 +336,24 @@ export async function warmNeighborCache(options: {
     // Silent fail
   }
 }
+
+/**
+ * Actively checks whether an IP address is reachable via ICMP ping.
+ * Fast 1-second timeout prevents blocking scan operations.
+ */
+export async function isHostReachable(ip?: string, iface?: string): Promise<boolean> {
+  if (!ip) return false;
+  if (ip === '127.0.0.1' || ip === '::1') return true;
+  if (!isRoutableIp(ip)) return false;
+
+  try {
+    const ifaceFlag = iface ? (process.platform === 'darwin' ? `-S ${iface} ` : `-I ${iface} `) : '';
+    const cmd = process.platform === 'darwin'
+      ? `ping -c 1 -t 1 -W 400 ${ifaceFlag}${ip} >/dev/null 2>&1`
+      : `ping -c 1 -w 1 -W 1 ${ifaceFlag}${ip} >/dev/null 2>&1`;
+    await execAsync(cmd);
+    return true;
+  } catch {
+    return false;
+  }
+}

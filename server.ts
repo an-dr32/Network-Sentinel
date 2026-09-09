@@ -515,6 +515,7 @@ async function startServer() {
     })!;
 
     broadcast('device.updated', updated);
+    broadcast('devices.updated', db.getDevices());
     broadcast('system.status', getSystemStatus());
     broadcast('topology.updated', generateTopologyData());
 
@@ -862,6 +863,18 @@ async function startServer() {
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Network Sentinel] Server running on http://0.0.0.0:${PORT}`);
+
+    // Perform initial discovery so disconnected or historic nodes are cleanly catalogued
+    setTimeout(async () => {
+      try {
+        await collectorManager.discoverNow();
+        broadcast('devices.updated', db.getDevices());
+        broadcast('system.status', getSystemStatus());
+        broadcast('topology.updated', generateTopologyData());
+      } catch (err) {
+        console.warn('[Network Sentinel] Initial discovery sweep warning:', err);
+      }
+    }, 1200);
   });
 }
 

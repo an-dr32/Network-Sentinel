@@ -239,6 +239,12 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
             prev.map((a) => (a.id === message.data.id ? message.data : a))
           );
           break;
+        case 'devices.updated':
+          setDevices(message.data);
+          setSelectedDevice((current) =>
+            current ? message.data.find((d: any) => d.id === current.id) || current : null
+          );
+          break;
         case 'device.updated':
           setDevices((prev) => {
             const exists = prev.some((d) => d.id === message.data.id);

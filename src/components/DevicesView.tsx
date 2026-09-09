@@ -38,6 +38,7 @@ export const DevicesView: React.FC = () => {
     detectDeviceOs,
     detectAllDevicesOs,
     updateDeviceName,
+    updateDeviceStatus,
   } = useNetwork();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -560,6 +561,29 @@ export const DevicesView: React.FC = () => {
                           >
                             Inspect
                           </button>
+                          {device.status === 'online' ? (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await updateDeviceStatus(device.id, 'offline');
+                              }}
+                              className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 rounded border border-zinc-700 text-xs transition-colors"
+                              title="Disconnect node and move to Historic list"
+                            >
+                              Disconnect
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await updateDeviceStatus(device.id, 'online');
+                              }}
+                              className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 rounded border border-emerald-800/60 text-xs transition-colors"
+                              title="Mark node as reconnected and active"
+                            >
+                              Reconnect
+                            </button>
+                          )}
                           {device.quarantined ? (
                             <button
                               onClick={() => triggerRestore(device.id)}
@@ -711,6 +735,29 @@ export const DevicesView: React.FC = () => {
                     >
                       Inspect
                     </button>
+                    {device.status === 'online' ? (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await updateDeviceStatus(device.id, 'offline');
+                        }}
+                        className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 rounded border border-zinc-700 text-xs transition-colors"
+                        title="Disconnect node and move to Historic list"
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await updateDeviceStatus(device.id, 'online');
+                        }}
+                        className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 rounded border border-emerald-800/60 text-xs transition-colors"
+                        title="Mark node as reconnected and active"
+                      >
+                        Reconnect
+                      </button>
+                    )}
                     {device.quarantined ? (
                       <button
                         onClick={() => triggerRestore(device.id)}

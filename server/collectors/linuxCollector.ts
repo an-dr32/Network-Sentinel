@@ -6,7 +6,7 @@ import { NetworkCollector } from './collector.interface';
 import { Device, NetworkEvent } from '../types';
 import { db } from '../db';
 import { lookupOuiVendor } from '../ouiDatabase';
-import { resolveTargetInterface, warmNeighborCache } from '../interfaceDetector';
+import { resolveTargetInterface, warmNeighborCache, isHostReachable } from '../interfaceDetector';
 
 const execAsync = promisify(exec);
 
@@ -44,7 +44,7 @@ export class LinuxCollector implements NetworkCollector {
       gatewayIp: defaultGwIp,
     });
 
-    // 3. Register host device if available
+    // 3. Register or update host device if available
     try {
       const ifaces = os.networkInterfaces();
       const targetIfaceAddrs = ifaces[activeIface] || Object.values(ifaces).flat().find((i) => i && !i.internal && i.family === 'IPv4');
@@ -57,7 +57,15 @@ export class LinuxCollector implements NetworkCollector {
         const hostIp = ipv4Info.address;
         const hostName = os.hostname() || `linux-${hostIp.replace(/\./g, '-')}.local`;
 
-        if (!db.getDeviceByMac(mac)) {
+        const existingHost = db.getDeviceByMac(mac);
+        if (existingHost) {
+          const updatedHost = db.updateDevice(existingHost.id, {
+            status: 'online',
+            lastSeen: now,
+            currentIp: hostIp,
+          })!;
+          devices.push(updatedHost);
+        } else {
           const hostDev: Device = {
             id: `dev_${mac.replace(/:/g, '')}`,
             macAddress: mac,
@@ -87,6 +95,7 @@ export class LinuxCollector implements NetworkCollector {
             tags: ['workstation', 'primary-host', activeIface, isEthernet ? 'ethernet' : 'wifi'],
           };
           db.addDevice(hostDev);
+          devices.push(hostDev);
         }
       }
     } catch {}
@@ -102,9 +111,11 @@ export class LinuxCollector implements NetworkCollector {
           const parts = lines[i].trim().split(/\s+/);
           if (parts.length >= 6) {
             const ip = parts[0];
+            const flags = parts[2];
             const mac = parts[3].toLowerCase();
             const iface = parts[5];
-            if (mac && mac !== '00:00:00:00:00:00') {
+            // Only accept valid, complete ARP entries (Flags !== '0x0')
+            if (mac && mac !== '00:00:00:00:00:00' && flags !== '0x0') {
               observedEntries.push({ ip, mac, iface });
             }
           }
@@ -114,12 +125,18 @@ export class LinuxCollector implements NetworkCollector {
       console.warn('Linux collector /proc/net/arp read error:', err);
     }
 
-    // Try `ip neigh show` as secondary modern Linux neighbor table reader
+    // Try `ip -4 neigh show` as secondary modern Linux neighbor table reader
     try {
       const { stdout: neighOut } = await execAsync(`ip -4 neigh show 2>/dev/null || true`);
       const neighLines = neighOut.trim().split('\n');
       for (const line of neighLines) {
         // e.g. "192.168.1.1 dev eth0 lladdr 00:11:22:33:44:55 REACHABLE"
+        const upper = line.toUpperCase();
+        // Ignore failed or incomplete neighbor records
+        if (upper.includes('FAILED') || upper.includes('INCOMPLETE') || upper.includes('NONE')) {
+          continue;
+        }
+
         const ipMatch = line.match(/^([\d.]+)/);
         const devMatch = line.match(/dev\s+(\w+)/);
         const macMatch = line.match(/lladdr\s+([0-9a-fA-F:]+)/);
@@ -158,8 +175,10 @@ export class LinuxCollector implements NetworkCollector {
           existing.tags.push('gateway', 'infrastructure');
           existing.deviceType = 'router';
         }
-        db.updateDevice(existing.id, existing);
-        devices.push(existing);
+        const updated = db.updateDevice(existing.id, existing)!;
+        if (!devices.some((d) => d.id === updated.id)) {
+          devices.push(updated);
+        }
       } else {
         const newDev: Device = {
           id: `dev_${mac.replace(/:/g, '')}`,
@@ -223,9 +242,53 @@ export class LinuxCollector implements NetworkCollector {
       }
     }
 
-    if (devices.length === 0) {
-      return db.getDevices();
+    // 5. Evaluate all other registered devices:
+    // If a device in DB was marked 'online' but was NOT observed in the ARP/neighbor cache,
+    // verify if it is still answering ping reachability probes. If unreachable, transition to 'offline' (Historic).
+    const activeMacs = new Set(devices.map((d) => d.macAddress.toLowerCase()));
+    const allDbDevices = db.getDevices();
+
+    for (const dev of allDbDevices) {
+      if (!activeMacs.has(dev.macAddress.toLowerCase())) {
+        if (dev.status === 'online') {
+          const reachable = await isHostReachable(dev.currentIp, activeIface);
+          if (reachable) {
+            const refreshed = db.updateDevice(dev.id, {
+              status: 'online',
+              lastSeen: now,
+            })!;
+            if (!devices.some((d) => d.id === refreshed.id)) {
+              devices.push(refreshed);
+            }
+          } else {
+            db.updateDevice(dev.id, {
+              status: 'offline',
+            });
+            if (this.eventCallback) {
+              this.eventCallback({
+                id: `evt_off_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                timestamp: now,
+                type: 'device_offline',
+                severity: 'info',
+                deviceId: dev.id,
+                deviceName: dev.customName || dev.hostname,
+                deviceIp: dev.currentIp,
+                title: `Device Disconnected (${dev.customName || dev.hostname})`,
+                description: `Node ${dev.macAddress} did not respond on ${activeIface} and moved to historic list.`,
+                evidence: {
+                  mac: dev.macAddress,
+                  ip: dev.currentIp,
+                  interface: activeIface,
+                },
+                simulated: false,
+              });
+            }
+          }
+        }
+      }
     }
+
+    // Return ONLY actively verified online devices
     return devices;
   }
 
@@ -253,3 +316,4 @@ export class LinuxCollector implements NetworkCollector {
 }
 
 export const linuxCollector = new LinuxCollector();
+
