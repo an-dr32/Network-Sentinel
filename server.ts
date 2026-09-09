@@ -11,7 +11,7 @@ import { collectorManager } from './server/collectors/collectorManager';
 import { securityLabEngine } from './server/securityLab';
 import { osFingerprintEngine } from './server/osFingerprint';
 import { trafficMonitor } from './server/trafficMonitor';
-import { SystemStatus, TopologyData, TopologyNode, TopologyEdge, NetworkEvent } from './server/types';
+import { SystemStatus, TopologyData, TopologyNode, TopologyEdge, NetworkEvent, OsDetectionDetails } from './server/types';
 import {
   getSystemNetworkInterfaces,
   resolveTargetInterface,
@@ -217,8 +217,18 @@ async function startServer() {
       };
     }
 
-    // Find the detected gateway/router if any
-    const gatewayDevice = devices.find(
+    const onlineDevices = devices.filter((d) => d.status === 'online');
+    if (onlineDevices.length === 0) {
+      return {
+        nodes: [],
+        edges: [],
+        lastUpdated: new Date().toISOString(),
+        trafficSummary,
+      };
+    }
+
+    // Find the detected online gateway/router if any
+    const gatewayDevice = onlineDevices.find(
       (d) =>
         d.tags?.includes('gateway') ||
         d.deviceType === 'router' ||
@@ -228,11 +238,11 @@ async function startServer() {
     const nodes: TopologyNode[] = [];
     const edges: TopologyEdge[] = [];
 
-    // The central hub node: if gateway is detected, use it; otherwise use the first device
-    const hubId = gatewayDevice ? gatewayDevice.id : devices[0].id;
+    // The central hub node: if online gateway is detected, use it; otherwise use the first online device
+    const hubId = gatewayDevice ? gatewayDevice.id : onlineDevices[0].id;
 
     // Only active/connected devices are shown as topology nodes (offline devices are in historic list)
-    const connectedDevices = devices.filter((d) => d.status === 'online' || d.id === hubId);
+    const connectedDevices = onlineDevices;
 
     for (const d of connectedDevices) {
       const isGateway = d.id === hubId;
@@ -750,6 +760,74 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to detect device OS' });
     }
+  });
+
+  // Manual OS Correction & Override by Administrator
+  app.post('/api/devices/:id/override-os', async (req, res) => {
+    const device = db.getDeviceById(req.params.id);
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const { osGuess, deviceType, customName } = req.body;
+    if (!osGuess || typeof osGuess !== 'string') {
+      return res.status(400).json({ error: 'osGuess string is required' });
+    }
+
+    const now = new Date().toISOString();
+    const updatedDetails: OsDetectionDetails = {
+      ...(device.osDetectionDetails || { methods: [], fingerprintedAt: now, confidence: 100 }),
+      confidence: 100,
+      fingerprintedAt: now,
+      manuallyVerified: true,
+      signatureMatch: 'Manually verified by network security administrator',
+      methods: [
+        ...(device.osDetectionDetails?.methods || []).filter((m) => !m.includes('Administrator Verified')),
+        'Administrator Verified OS Label Override',
+      ],
+    };
+
+    const intermediate = db.updateDevice(device.id, {
+      osGuess: osGuess.trim(),
+      osConfidence: 100,
+      osDetectionDetails: updatedDetails,
+      ...(deviceType ? { deviceType } : {}),
+      ...(customName !== undefined ? { customName: customName.trim() } : {}),
+    })!;
+
+    const evaluation = detectionEngine.evaluateDeviceRisk(intermediate);
+    const updated = db.updateDevice(intermediate.id, {
+      riskScore: evaluation.score,
+      riskSeverity: evaluation.severity,
+      riskEvidence: evaluation.evidence,
+    })!;
+
+    const event: NetworkEvent = {
+      id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: now,
+      type: 'os_fingerprinted',
+      deviceId: device.id,
+      deviceName: updated.customName || updated.hostname,
+      deviceIp: device.currentIp,
+      severity: 'info',
+      title: `OS Corrected: ${osGuess.trim()}`,
+      description: `Administrator verified and assigned operating system '${osGuess.trim()}' to ${updated.hostname}.`,
+      evidence: {
+        osGuess: osGuess.trim(),
+        previousGuess: device.osGuess,
+        deviceType: updated.deviceType,
+        verifiedBy: 'administrator',
+      },
+      simulated: false,
+    };
+    db.addEvent(event);
+
+    broadcast('device.updated', updated);
+    broadcast('event.new', event);
+    broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
+
+    res.json({ device: updated });
   });
 
   // Batch OS Detection Across All Devices

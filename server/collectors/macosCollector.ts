@@ -152,6 +152,23 @@ export class MacosCollector implements NetworkCollector {
 
         const connTypeTag = entryIsEthernet ? 'ethernet' : 'wifi';
 
+        const isLive = isGateway ? true : await isHostReachable(ip, iface);
+
+        if (!isLive) {
+          if (existing) {
+            if (existing.status === 'online') {
+              db.updateDevice(existing.id, {
+                status: 'offline',
+                trafficStats: {
+                  ...existing.trafficStats,
+                  rateKbps: 0,
+                },
+              });
+            }
+          }
+          continue;
+        }
+
         if (existing) {
           existing.lastSeen = now;
           existing.status = 'online';
@@ -255,6 +272,10 @@ export class MacosCollector implements NetworkCollector {
           } else {
             db.updateDevice(dev.id, {
               status: 'offline',
+              trafficStats: {
+                ...dev.trafficStats,
+                rateKbps: 0,
+              },
             });
             if (this.eventCallback) {
               this.eventCallback({

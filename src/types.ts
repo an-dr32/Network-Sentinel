@@ -90,7 +90,13 @@ export interface OsDetectionDetails {
   confidence: number;
   fingerprintedAt: string;
   identifiedBanners?: string[];
+  banners?: Record<string, string>;
   signatureMatch?: string;
+  reverseDns?: string;
+  macRandomized?: boolean;
+  httpTitle?: string;
+  aiAnalysis?: string;
+  manuallyVerified?: boolean;
 }
 
 export type NetworkEventType =

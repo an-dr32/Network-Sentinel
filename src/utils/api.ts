@@ -221,6 +221,21 @@ export const api = {
     return res.json();
   },
 
+  async overrideDeviceOs(
+    deviceId: string,
+    osGuess: string,
+    deviceType?: string,
+    customName?: string
+  ): Promise<{ device: Device }> {
+    const res = await fetch(`/api/devices/${deviceId}/override-os`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ osGuess, deviceType, customName }),
+    });
+    if (!res.ok) throw new Error('Failed to update device OS');
+    return res.json();
+  },
+
   async detectAllDevicesOs(): Promise<{ count: number; devices: Device[] }> {
     const res = await fetch('/api/discovery/detect-all-os', {
       method: 'POST',

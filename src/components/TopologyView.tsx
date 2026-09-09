@@ -48,11 +48,12 @@ export const TopologyView: React.FC = () => {
     }
   };
 
-  const nodes = topology?.nodes || [];
+  const nodes = (topology?.nodes || []).filter((n) => n.status === 'online');
 
   // Categorize nodes
   const gatewayNode = nodes.find((n) => n.type === 'gateway');
   const deviceNodes = nodes.filter((n) => n.type === 'device');
+  const historicCount = devices.filter((d) => d.status !== 'online').length;
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedFullDevice = devices.find((d) => d.id === selectedNodeId);
@@ -163,8 +164,22 @@ export const TopologyView: React.FC = () => {
           </p>
         </div>
 
-        {/* Global Router Request Counters */}
+        {/* Global Router Request Counters & Node Status */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="bg-[#18181B] px-3 py-1.5 rounded-md border border-emerald-950/60 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[#71717A]">Connected Nodes:</span>
+            <span className="font-mono font-bold text-emerald-300">{nodes.length}</span>
+          </div>
+
+          {historicCount > 0 && (
+            <div className="bg-[#18181B] px-3 py-1.5 rounded-md border border-zinc-800 flex items-center gap-2" title="Disconnected nodes safely tracked in Historic list">
+              <span className="w-2 h-2 rounded-full bg-zinc-600" />
+              <span className="text-[#71717A]">Historic:</span>
+              <span className="font-mono font-medium text-zinc-400">{historicCount}</span>
+            </div>
+          )}
+
           <div className="bg-[#18181B] px-3 py-1.5 rounded-md border border-[#27272A] flex items-center gap-2">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
             <span className="text-[#71717A]">Router Total:</span>

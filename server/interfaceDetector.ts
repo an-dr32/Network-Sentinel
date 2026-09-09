@@ -1,4 +1,5 @@
 import os from 'os';
+import net from 'net';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -338,8 +339,62 @@ export async function warmNeighborCache(options: {
 }
 
 /**
- * Actively checks whether an IP address is reachable via ICMP ping.
- * Fast 1-second timeout prevents blocking scan operations.
+ * Fast TCP probe on common subnet service ports.
+ * If a device is online on the local LAN:
+ * - If a service is listening, it connects -> returns true.
+ * - If the port is closed, the remote OS actively replies with a TCP RST (ECONNREFUSED) -> returns true (host is alive!).
+ * - If the machine is powered off / disconnected (historic), TCP SYN drops/times out -> returns false.
+ */
+export async function probeTcpReachability(ip: string, timeoutMs = 350): Promise<boolean> {
+  const ports = [80, 443, 445, 22, 53, 8080];
+
+  const checkPort = (port: number): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      let settled = false;
+
+      const done = (isAlive: boolean) => {
+        if (!settled) {
+          settled = true;
+          try {
+            socket.destroy();
+          } catch {}
+          resolve(isAlive);
+        }
+      };
+
+      socket.setTimeout(timeoutMs);
+      socket.once('connect', () => done(true));
+      socket.once('timeout', () => done(false));
+      socket.once('error', (err: any) => {
+        // If ECONNREFUSED or ECONNRESET, the target host sent an active TCP RST packet
+        // proving it is physically online on the local network!
+        if (err && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET')) {
+          done(true);
+        } else {
+          done(false);
+        }
+      });
+
+      try {
+        socket.connect(port, ip);
+      } catch {
+        done(false);
+      }
+    });
+  };
+
+  try {
+    const results = await Promise.all(ports.map((p) => checkPort(p)));
+    return results.some((alive) => alive === true);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Actively checks whether an IP address is reachable via ICMP ping,
+ * falling back to fast TCP SYN reachability probing.
  */
 export async function isHostReachable(ip?: string, iface?: string): Promise<boolean> {
   if (!ip) return false;
@@ -354,6 +409,7 @@ export async function isHostReachable(ip?: string, iface?: string): Promise<bool
     await execAsync(cmd);
     return true;
   } catch {
-    return false;
+    // If ICMP ping failed (e.g. host blocks ping), verify with active TCP reachability probe
+    return await probeTcpReachability(ip);
   }
 }

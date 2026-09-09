@@ -51,6 +51,7 @@ interface NetworkContextType {
   triggerDiscoveryScan: (durationSeconds?: number, isIndefinite?: boolean) => Promise<void>;
   cancelDiscoveryScan: () => void;
   detectDeviceOs: (deviceId: string) => Promise<{ device: Device; fingerprint: any }>;
+  overrideDeviceOs: (deviceId: string, osGuess: string, deviceType?: string, customName?: string) => Promise<Device>;
   detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
   isMonitoringActive: boolean;
   toggleMonitoringMode: (enabled?: boolean) => Promise<boolean>;
@@ -521,6 +522,20 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return res;
   };
 
+  const overrideDeviceOs = async (
+    deviceId: string,
+    osGuess: string,
+    deviceType?: string,
+    customName?: string
+  ) => {
+    const res = await api.overrideDeviceOs(deviceId, osGuess, deviceType, customName);
+    await refreshAll();
+    if (selectedDevice && selectedDevice.id === deviceId) {
+      setSelectedDevice(res.device);
+    }
+    return res.device;
+  };
+
   const clearEvents = async () => {
     try {
       await api.clearEvents();
@@ -597,6 +612,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         triggerDiscoveryScan,
         cancelDiscoveryScan,
         detectDeviceOs,
+        overrideDeviceOs,
         detectAllDevicesOs,
         isMonitoringActive,
         toggleMonitoringMode,

@@ -20,6 +20,9 @@ import {
   CheckCircle,
   Terminal,
   Edit2,
+  Edit3,
+  Sparkles,
+  BadgeCheck,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -40,6 +43,7 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
     setQuarantineTarget,
     triggerRestore,
     detectDeviceOs,
+    overrideDeviceOs,
   } = useNetwork();
   const [activeTab, setActiveTab] = useState<'overview' | 'os' | 'risk' | 'ports' | 'dns' | 'history'>('overview');
   const [isDetectingOs, setIsDetectingOs] = useState(false);
@@ -50,9 +54,19 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
   const [isSavingName, setIsSavingName] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  const [isEditingOs, setIsEditingOs] = useState(false);
+  const [osInput, setOsInput] = useState(device.osGuess || '');
+  const [deviceTypeInput, setDeviceTypeInput] = useState(device.deviceType || 'unknown');
+  const [isSavingOs, setIsSavingOs] = useState(false);
+
   useEffect(() => {
     setNameInput(device.customName || '');
   }, [device.customName]);
+
+  useEffect(() => {
+    setOsInput(device.osGuess || '');
+    setDeviceTypeInput(device.deviceType || 'unknown');
+  }, [device.osGuess, device.deviceType]);
 
   const handleSaveName = async () => {
     setIsSavingName(true);
@@ -63,6 +77,22 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
       console.error('Failed to update device name', err);
     } finally {
       setIsSavingName(false);
+    }
+  };
+
+  const handleSaveOsOverride = async (selectedOs?: string, selectedType?: string) => {
+    setIsSavingOs(true);
+    const targetOs = selectedOs || osInput;
+    const targetType = selectedType || deviceTypeInput;
+    try {
+      await overrideDeviceOs(device.id, targetOs, targetType);
+      setDetectSuccessMsg(`OS verified & assigned: "${targetOs}"`);
+      setIsEditingOs(false);
+      setTimeout(() => setDetectSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to override OS:', err);
+    } finally {
+      setIsSavingOs(false);
     }
   };
 
@@ -383,15 +413,128 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                       OS Fingerprint & TCP/IP Stack Diagnostics
                     </h3>
                   </div>
-                  <button
-                    onClick={handleFingerprintOs}
-                    disabled={isDetectingOs}
-                    className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-emerald-400 rounded border border-zinc-700 text-xs transition-colors"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isDetectingOs ? 'animate-spin' : ''}`} />
-                    <span>{isDetectingOs ? 'Probing...' : 'Re-probe OS'}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsEditingOs(!isEditingOs)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors border ${
+                        isEditingOs
+                          ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700'
+                      }`}
+                      title="Manually correct or verify operating system label"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{isEditingOs ? 'Close Editor' : 'Correct OS'}</span>
+                    </button>
+                    <button
+                      onClick={handleFingerprintOs}
+                      disabled={isDetectingOs}
+                      className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-emerald-400 rounded border border-zinc-700 text-xs transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isDetectingOs ? 'animate-spin' : ''}`} />
+                      <span>{isDetectingOs ? 'Probing...' : 'Re-probe OS'}</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Inline Manual OS Override Form */}
+                {isEditingOs && (
+                  <div className="p-3.5 rounded-lg bg-[#111113] border border-emerald-900/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                        <BadgeCheck className="w-4 h-4" />
+                        <span>Administrator Operating System Override & Ground Truth</span>
+                      </div>
+                      <span className="text-[10px] text-zinc-400 font-mono">100% verified certainty</span>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-mono text-[#71717A] block">Quick Presets</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { name: 'Ubuntu Linux', type: 'server' },
+                          { name: 'Debian GNU/Linux', type: 'server' },
+                          { name: 'macOS Sequoia 15', type: 'workstation' },
+                          { name: 'macOS Sonoma 14', type: 'laptop' },
+                          { name: 'Microsoft Windows 11', type: 'workstation' },
+                          { name: 'Microsoft Windows 10', type: 'workstation' },
+                          { name: 'Microsoft Windows Server', type: 'server' },
+                          { name: 'Apple iOS / iPadOS', type: 'smartphone' },
+                          { name: 'Android OS', type: 'smartphone' },
+                          { name: 'OpenWrt Router', type: 'router' },
+                          { name: 'Raspberry Pi OS', type: 'iot' },
+                          { name: 'Network Printer / MFP', type: 'printer' },
+                        ].map((preset) => (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            onClick={() => {
+                              setOsInput(preset.name);
+                              setDeviceTypeInput(preset.type);
+                            }}
+                            className="px-2 py-0.5 text-[11px] rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 transition-colors font-mono"
+                          >
+                            {preset.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-[10px] uppercase font-mono text-[#71717A] block mb-1">
+                          Operating System Label
+                        </label>
+                        <input
+                          type="text"
+                          value={osInput}
+                          onChange={(e) => setOsInput(e.target.value)}
+                          placeholder="e.g. Ubuntu 24.04 LTS, Windows 11 Pro..."
+                          className="w-full bg-[#18181B] border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-[#FAFAFA] font-mono focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-mono text-[#71717A] block mb-1">
+                          Device Category
+                        </label>
+                        <select
+                          value={deviceTypeInput}
+                          onChange={(e) => setDeviceTypeInput(e.target.value)}
+                          className="w-full bg-[#18181B] border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-[#FAFAFA] font-mono focus:border-emerald-500 focus:outline-none"
+                        >
+                          <option value="workstation">Workstation</option>
+                          <option value="laptop">Laptop</option>
+                          <option value="server">Server</option>
+                          <option value="smartphone">Smartphone / Tablet</option>
+                          <option value="router">Router / Gateway</option>
+                          <option value="printer">Network Printer</option>
+                          <option value="iot">IoT / Embedded</option>
+                          <option value="unknown">Unknown</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingOs(false)}
+                        className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSavingOs || !osInput.trim()}
+                        onClick={() => handleSaveOsOverride()}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isSavingOs ? 'Saving...' : 'Save & Verify OS'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {detectSuccessMsg && (
                   <div className="p-2 rounded bg-emerald-950/40 border border-emerald-800/50 text-emerald-300 text-xs flex items-center gap-2">
@@ -402,9 +545,21 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="bg-[#111113] p-3 rounded border border-[#27272A]">
-                    <span className="text-[#71717A] text-[10px] uppercase font-mono block">Classified OS</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#71717A] text-[10px] uppercase font-mono block">Classified OS</span>
+                      {device.osDetectionDetails?.manuallyVerified && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-mono">
+                          Verified
+                        </span>
+                      )}
+                    </div>
                     <span className="text-sm font-medium text-[#FAFAFA] block mt-0.5">{device.osGuess || 'Unidentified'}</span>
                     <span className="text-[11px] text-[#71717A] block mt-0.5">{device.osDetectionDetails?.signatureMatch || 'Signature analysis pending'}</span>
+                    {device.osDetectionDetails?.macRandomized && (
+                      <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] font-mono bg-indigo-950/60 border border-indigo-800/50 text-indigo-300">
+                        Private Wi-Fi MAC
+                      </span>
+                    )}
                   </div>
                   <div className="bg-[#111113] p-3 rounded border border-[#27272A]">
                     <span className="text-[#71717A] text-[10px] uppercase font-mono block">Fingerprint Confidence</span>
@@ -420,7 +575,13 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                       <span className="font-mono text-xs text-[#FAFAFA]">{device.osConfidence || 0}%</span>
                     </div>
                     <span className="text-[10px] text-[#71717A] block mt-1">
-                      {(device.osConfidence || 0) >= 80 ? 'High certainty match' : (device.osConfidence || 0) >= 50 ? 'Moderate certainty' : 'Low certainty heuristic'}
+                      {device.osDetectionDetails?.manuallyVerified
+                        ? 'Administrator Verified Ground Truth'
+                        : (device.osConfidence || 0) >= 80
+                        ? 'High certainty match'
+                        : (device.osConfidence || 0) >= 50
+                        ? 'Moderate certainty'
+                        : 'Low certainty heuristic'}
                     </span>
                   </div>
                   <div className="bg-[#111113] p-3 rounded border border-[#27272A]">
@@ -439,6 +600,35 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                     </span>
                   </div>
                 </div>
+
+                {/* Discovered Host Metadata (Reverse DNS & Web Title) */}
+                {(device.osDetectionDetails?.reverseDns || device.osDetectionDetails?.httpTitle) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 rounded bg-[#111113] border border-[#27272A] text-xs font-mono">
+                    {device.osDetectionDetails.reverseDns && (
+                      <div>
+                        <span className="text-[10px] uppercase text-[#71717A] block">Reverse DNS (PTR)</span>
+                        <span className="text-zinc-200 truncate block mt-0.5">{device.osDetectionDetails.reverseDns}</span>
+                      </div>
+                    )}
+                    {device.osDetectionDetails.httpTitle && (
+                      <div>
+                        <span className="text-[10px] uppercase text-[#71717A] block">Web Console Title</span>
+                        <span className="text-emerald-300 truncate block mt-0.5">{device.osDetectionDetails.httpTitle}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* AI Cybersecurity Synthesis if present */}
+                {device.osDetectionDetails?.aiAnalysis && (
+                  <div className="p-3 rounded-lg bg-indigo-950/30 border border-indigo-800/40 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 text-indigo-300 font-semibold">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Gemini AI Multimodal Synthesis</span>
+                    </div>
+                    <p className="text-zinc-300 leading-relaxed text-[11px]">{device.osDetectionDetails.aiAnalysis}</p>
+                  </div>
+                )}
 
                 {device.osDetectionDetails?.methods && device.osDetectionDetails.methods.length > 0 && (
                   <div>
@@ -516,13 +706,24 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                     <Fingerprint className="w-7 h-7" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-lg font-semibold text-[#FAFAFA]">
                         {device.osGuess || 'Unidentified Operating System'}
                       </h3>
                       <span className={`px-2 py-0.5 rounded text-xs font-mono border ${osInfo.bg} ${osInfo.text} ${osInfo.border}`}>
                         {osInfo.displayName}
                       </span>
+                      {device.osDetectionDetails?.manuallyVerified && (
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-950/80 border border-emerald-700 text-emerald-300 font-mono flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          Verified Ground Truth
+                        </span>
+                      )}
+                      {device.osDetectionDetails?.macRandomized && (
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-950/70 border border-indigo-800 text-indigo-300 font-mono">
+                          Private Wi-Fi Address (Randomized)
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-[#71717A] mt-1">
                       {device.osDetectionDetails?.signatureMatch || 'Heuristic multi-vector TCP/IP analysis'}
@@ -538,6 +739,17 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                     </span>
                   </div>
                   <button
+                    onClick={() => setIsEditingOs(!isEditingOs)}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                      isEditingOs
+                        ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700'
+                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700'
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isEditingOs ? 'Close Editor' : 'Correct OS'}</span>
+                  </button>
+                  <button
                     onClick={handleFingerprintOs}
                     disabled={isDetectingOs}
                     className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors shadow-sm"
@@ -547,6 +759,105 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                   </button>
                 </div>
               </div>
+
+              {/* Inline Manual OS Override Form for Tab 2 */}
+              {isEditingOs && (
+                <div className="p-4 rounded-lg bg-[#111113] border border-emerald-800/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                      <BadgeCheck className="w-4 h-4" />
+                      <span>Administrator Operating System Override & Ground Truth</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400 font-mono">100% verified certainty</span>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-mono text-[#71717A] block">Quick Presets</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { name: 'Ubuntu Linux', type: 'server' },
+                        { name: 'Debian GNU/Linux', type: 'server' },
+                        { name: 'macOS Sequoia 15', type: 'workstation' },
+                        { name: 'macOS Sonoma 14', type: 'laptop' },
+                        { name: 'Microsoft Windows 11', type: 'workstation' },
+                        { name: 'Microsoft Windows 10', type: 'workstation' },
+                        { name: 'Microsoft Windows Server', type: 'server' },
+                        { name: 'Apple iOS / iPadOS', type: 'smartphone' },
+                        { name: 'Android OS', type: 'smartphone' },
+                        { name: 'OpenWrt Router', type: 'router' },
+                        { name: 'Raspberry Pi OS', type: 'iot' },
+                        { name: 'Network Printer / MFP', type: 'printer' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          onClick={() => {
+                            setOsInput(preset.name);
+                            setDeviceTypeInput(preset.type);
+                          }}
+                          className="px-2 py-0.5 text-[11px] rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 transition-colors font-mono"
+                        >
+                          {preset.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-[10px] uppercase font-mono text-[#71717A] block mb-1">
+                        Operating System Label
+                      </label>
+                      <input
+                        type="text"
+                        value={osInput}
+                        onChange={(e) => setOsInput(e.target.value)}
+                        placeholder="e.g. Ubuntu 24.04 LTS, Windows 11 Pro..."
+                        className="w-full bg-[#18181B] border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-[#FAFAFA] font-mono focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-mono text-[#71717A] block mb-1">
+                        Device Category
+                      </label>
+                      <select
+                        value={deviceTypeInput}
+                        onChange={(e) => setDeviceTypeInput(e.target.value)}
+                        className="w-full bg-[#18181B] border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-[#FAFAFA] font-mono focus:border-emerald-500 focus:outline-none"
+                      >
+                        <option value="workstation">Workstation</option>
+                        <option value="laptop">Laptop</option>
+                        <option value="server">Server</option>
+                        <option value="smartphone">Smartphone / Tablet</option>
+                        <option value="router">Router / Gateway</option>
+                        <option value="printer">Network Printer</option>
+                        <option value="iot">IoT / Embedded</option>
+                        <option value="unknown">Unknown</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingOs(false)}
+                      className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSavingOs || !osInput.trim()}
+                      onClick={() => handleSaveOsOverride()}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-xs font-medium transition-colors flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{isSavingOs ? 'Saving...' : 'Save & Verify OS'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {detectSuccessMsg && (
                 <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2.5">
@@ -626,6 +937,47 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                 </div>
               </div>
 
+              {/* Discovered DNS & Web Application Evidence */}
+              {(device.osDetectionDetails?.reverseDns || device.osDetectionDetails?.httpTitle) && (
+                <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-emerald-400" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA]">
+                      Host Telemetry & Application Titles
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                    {device.osDetectionDetails.reverseDns && (
+                      <div className="p-3 rounded bg-[#111113] border border-[#27272A]">
+                        <span className="text-[#71717A] text-[10px] uppercase block">Reverse DNS (PTR Record)</span>
+                        <span className="text-zinc-200 block mt-1 break-all font-semibold">{device.osDetectionDetails.reverseDns}</span>
+                      </div>
+                    )}
+                    {device.osDetectionDetails.httpTitle && (
+                      <div className="p-3 rounded bg-[#111113] border border-[#27272A]">
+                        <span className="text-[#71717A] text-[10px] uppercase block">HTTP Web Console HTML &lt;title&gt;</span>
+                        <span className="text-emerald-300 block mt-1 break-all font-semibold">{device.osDetectionDetails.httpTitle}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Multimodal AI Synthesis */}
+              {device.osDetectionDetails?.aiAnalysis && (
+                <div className="bg-[#18181B] p-4 rounded-lg border border-indigo-800/50 space-y-2">
+                  <div className="flex items-center gap-2 text-indigo-300">
+                    <Sparkles className="w-4 h-4" />
+                    <h4 className="text-xs font-semibold uppercase tracking-wider">
+                      Gemini Multimodal Cybersecurity Reasoning
+                    </h4>
+                  </div>
+                  <p className="text-xs text-zinc-300 leading-relaxed bg-[#111113] p-3 rounded border border-[#27272A]">
+                    {device.osDetectionDetails.aiAnalysis}
+                  </p>
+                </div>
+              )}
+
               {/* Service Banners Retrieved */}
               {device.osDetectionDetails?.banners && Object.keys(device.osDetectionDetails.banners).length > 0 && (
                 <div className="bg-[#18181B] p-4 rounded-lg border border-[#27272A] space-y-3">
@@ -674,14 +1026,24 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({ device, on
                       desc: 'Queries IEEE registered MAC prefixes to establish hardware manufacture identity.',
                     },
                     {
+                      name: 'Reverse DNS PTR Lookup',
+                      active: Boolean(device.osDetectionDetails?.reverseDns) || device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('dns')),
+                      desc: 'Resolves IP in-addr.arpa PTR records to identify operating systems via host naming schemes.',
+                    },
+                    {
+                      name: 'NetBIOS Name Service Telemetry',
+                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('netbios')),
+                      desc: 'Probes UDP 137 to detect active Windows NT Workgroup & Server domain members.',
+                    },
+                    {
+                      name: 'Administrator Verified Ground Truth',
+                      active: Boolean(device.osDetectionDetails?.manuallyVerified),
+                      desc: 'Confirmed manual OS ground truth override supplied by network security operator.',
+                    },
+                    {
                       name: 'Local Host Kernel System Inspection',
                       active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('kernel') || m.toLowerCase().includes('host')),
                       desc: 'Examines native kernel platform release, architecture, and network interface metadata.',
-                    },
-                    {
-                      name: 'Network Topology & Role Heuristics',
-                      active: device.osDetectionDetails?.methods.some((m) => m.toLowerCase().includes('gateway') || m.toLowerCase().includes('topology')),
-                      desc: 'Assesses default gateway routing position and broadcast telemetry for infrastructure categorization.',
                     },
                   ].map((pipe, idx) => (
                     <div

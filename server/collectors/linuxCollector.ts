@@ -7,6 +7,7 @@ import { Device, NetworkEvent } from '../types';
 import { db } from '../db';
 import { lookupOuiVendor } from '../ouiDatabase';
 import { resolveTargetInterface, warmNeighborCache, isHostReachable } from '../interfaceDetector';
+import { osFingerprintEngine } from '../osFingerprint';
 
 const execAsync = promisify(exec);
 
@@ -101,31 +102,9 @@ export class LinuxCollector implements NetworkCollector {
     } catch {}
 
     // 4. Read /proc/net/arp and ip neigh
-    const observedEntries: Array<{ ip: string; mac: string; iface: string }> = [];
+    const observedEntries: Array<{ ip: string; mac: string; iface: string; guaranteedReachable: boolean }> = [];
 
-    try {
-      if (fs.existsSync('/proc/net/arp')) {
-        const arpData = fs.readFileSync('/proc/net/arp', 'utf-8');
-        const lines = arpData.trim().split('\n');
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].trim().split(/\s+/);
-          if (parts.length >= 6) {
-            const ip = parts[0];
-            const flags = parts[2];
-            const mac = parts[3].toLowerCase();
-            const iface = parts[5];
-            // Only accept valid, complete ARP entries (Flags !== '0x0')
-            if (mac && mac !== '00:00:00:00:00:00' && flags !== '0x0') {
-              observedEntries.push({ ip, mac, iface });
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Linux collector /proc/net/arp read error:', err);
-    }
-
-    // Try `ip -4 neigh show` as secondary modern Linux neighbor table reader
+    // Try `ip -4 neigh show` first as modern Linux neighbor table reader
     try {
       const { stdout: neighOut } = await execAsync(`ip -4 neigh show 2>/dev/null || true`);
       const neighLines = neighOut.trim().split('\n');
@@ -144,15 +123,40 @@ export class LinuxCollector implements NetworkCollector {
           const ip = ipMatch[1];
           const mac = macMatch[1].toLowerCase();
           const iface = devMatch ? devMatch[1] : activeIface;
+          const guaranteedReachable = upper.includes('REACHABLE') || upper.includes('PERMANENT');
           if (mac && mac !== '00:00:00:00:00:00' && !observedEntries.some((e) => e.mac === mac)) {
-            observedEntries.push({ ip, mac, iface });
+            observedEntries.push({ ip, mac, iface, guaranteedReachable });
           }
         }
       }
     } catch {}
 
+    try {
+      if (fs.existsSync('/proc/net/arp')) {
+        const arpData = fs.readFileSync('/proc/net/arp', 'utf-8');
+        const lines = arpData.trim().split('\n');
+        for (let i = 1; i < lines.length; i++) {
+          const parts = lines[i].trim().split(/\s+/);
+          if (parts.length >= 6) {
+            const ip = parts[0];
+            const flags = parts[2];
+            const mac = parts[3].toLowerCase();
+            const iface = parts[5];
+            // Only accept valid, complete ARP entries (Flags !== '0x0')
+            if (mac && mac !== '00:00:00:00:00:00' && flags !== '0x0') {
+              if (!observedEntries.some((e) => e.mac === mac)) {
+                observedEntries.push({ ip, mac, iface, guaranteedReachable: false });
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Linux collector /proc/net/arp read error:', err);
+    }
+
     for (const entry of observedEntries) {
-      const { ip, mac, iface } = entry;
+      const { ip, mac, iface, guaranteedReachable } = entry;
       const isGateway = ip === defaultGwIp || ip.endsWith('.1');
       const entryIsEthernet =
         iface === activeIface
@@ -166,6 +170,27 @@ export class LinuxCollector implements NetworkCollector {
       const connTag = entryIsEthernet ? 'ethernet' : 'wifi';
 
       const existing = db.getDeviceByMac(mac);
+
+      // Verify active reachability: if guaranteed by kernel (REACHABLE/PERMANENT), it's online.
+      // Otherwise, probe actively so stale historic entries are NOT marked online.
+      const isLive = guaranteedReachable ? true : await isHostReachable(ip, iface);
+
+      if (!isLive) {
+        if (existing) {
+          if (existing.status === 'online') {
+            db.updateDevice(existing.id, {
+              status: 'offline',
+              trafficStats: {
+                ...existing.trafficStats,
+                rateKbps: 0,
+              },
+            });
+          }
+        }
+        // Disconnected/historic entry - do NOT add to active devices list
+        continue;
+      }
+
       if (existing) {
         existing.lastSeen = now;
         existing.status = 'online';
@@ -180,10 +205,16 @@ export class LinuxCollector implements NetworkCollector {
           devices.push(updated);
         }
       } else {
+        let initialHostname = isGateway ? 'gateway.local' : `host-${ip.replace(/\./g, '-')}.local`;
+        try {
+          const rDns = await osFingerprintEngine.resolveReverseDns(ip);
+          if (rDns) initialHostname = rDns;
+        } catch {}
+
         const newDev: Device = {
           id: `dev_${mac.replace(/:/g, '')}`,
           macAddress: mac,
-          hostname: isGateway ? 'gateway.local' : `host-${ip.replace(/\./g, '-')}.local`,
+          hostname: initialHostname,
           vendor: this.lookupVendor(mac),
           ipAddresses: [ip],
           currentIp: ip,
@@ -217,6 +248,36 @@ export class LinuxCollector implements NetworkCollector {
         };
         db.addDevice(newDev);
         devices.push(newDev);
+
+        // Asynchronously initiate OS fingerprinting on discovery
+        osFingerprintEngine.fingerprintDevice(newDev).then((fp) => {
+          const updated = db.updateDevice(newDev.id, {
+            osGuess: fp.osGuess,
+            osConfidence: fp.confidence,
+            osDetectionDetails: fp.details,
+            deviceType: fp.deviceType,
+            openPorts: fp.openPorts,
+          });
+          if (updated && this.eventCallback) {
+            this.eventCallback({
+              id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              timestamp: new Date().toISOString(),
+              type: 'os_fingerprinted',
+              severity: 'info',
+              deviceId: updated.id,
+              deviceName: updated.hostname,
+              deviceIp: updated.currentIp,
+              title: `OS Fingerprinted: ${fp.osGuess}`,
+              description: `Identified OS for ${updated.hostname} (${updated.currentIp}) with ${fp.confidence}% confidence.`,
+              evidence: {
+                osGuess: fp.osGuess,
+                confidence: fp.confidence,
+                methods: fp.details.methods,
+              },
+              simulated: false,
+            });
+          }
+        }).catch((err) => console.warn('Auto OS fingerprint error for new device:', err));
 
         if (this.eventCallback) {
           this.eventCallback({
@@ -263,6 +324,10 @@ export class LinuxCollector implements NetworkCollector {
           } else {
             db.updateDevice(dev.id, {
               status: 'offline',
+              trafficStats: {
+                ...dev.trafficStats,
+                rateKbps: 0,
+              },
             });
             if (this.eventCallback) {
               this.eventCallback({
