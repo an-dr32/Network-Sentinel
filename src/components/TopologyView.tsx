@@ -65,6 +65,7 @@ export const TopologyView: React.FC = () => {
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inspectorRef = useRef<HTMLDivElement | null>(null);
 
   const touchStateRef = useRef<{
     initialDist: number;
@@ -250,20 +251,25 @@ export const TopologyView: React.FC = () => {
     isCanvasActiveRef.current = isCanvasActive;
   }, [isCanvasActive]);
 
-  // Click outside or Escape key deactivates canvas zoom mode to restore normal website scrolling
+  // Click outside or Escape key deactivates canvas zoom mode and deselects node
   useEffect(() => {
     const handlePointerDownOutside = (e: PointerEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
+      const targetNode = e.target as Node;
+      const isInsideCanvas = containerRef.current?.contains(targetNode);
+      const isInsideInspector = inspectorRef.current?.contains(targetNode);
+
+      if (!isInsideCanvas) {
         setIsCanvasActive(false);
+        if (!isInsideInspector) {
+          setSelectedNodeId(null);
+        }
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsCanvasActive(false);
+        setSelectedNodeId(null);
       }
     };
 
@@ -360,9 +366,14 @@ export const TopologyView: React.FC = () => {
     const scaleX = ctm ? ctm.a : 1;
     const scaleY = ctm ? ctm.d : 1;
 
+    let hasMoved = false;
+
     const onPointerMove = (ev: PointerEvent) => {
       const dxScreen = ev.clientX - startClientX;
       const dyScreen = ev.clientY - startClientY;
+      if (Math.hypot(dxScreen, dyScreen) > 4) {
+        hasMoved = true;
+      }
       const dxSvg = dxScreen / scaleX;
       const dySvg = dyScreen / scaleY;
 
@@ -374,6 +385,10 @@ export const TopologyView: React.FC = () => {
     };
 
     const onPointerUp = () => {
+      if (!hasMoved) {
+        // Clicked away on empty canvas background: deselect node (returns to green)
+        setSelectedNodeId(null);
+      }
       setIsPanning(false);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
@@ -432,7 +447,8 @@ export const TopologyView: React.FC = () => {
     const onPointerUp = () => {
       if (!hasMoved) {
         if (nodeId !== 'wan-gateway') {
-          setSelectedNodeId(nodeId);
+          // Toggle node selection if clicking the same node, or select the new node
+          setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
         }
       }
       setDraggingNodeId(null);
@@ -786,9 +802,16 @@ export const TopologyView: React.FC = () => {
                   {layout.nodes
                     .filter((n) => n.type === 'device')
                     .map((dev) => {
+                      const isSelected = dev.id === selectedNodeId;
                       const isCrit = dev.riskSeverity === 'critical' || dev.quarantined;
                       const isSusp = dev.riskSeverity === 'suspicious';
-                      const strokeColor = isCrit ? '#EF4444' : isSusp ? '#F59E0B' : '#10B981';
+                      const strokeColor = isCrit
+                        ? '#EF4444'
+                        : isSusp
+                        ? '#F59E0B'
+                        : isSelected
+                        ? '#F97316'
+                        : '#10B981';
 
                       // Device request metrics
                       const devStats = dev.routerTraffic || trafficSummary?.deviceStats?.[dev.id];
@@ -809,9 +832,9 @@ export const TopologyView: React.FC = () => {
                             x2={dev.x}
                             y2={dev.y}
                             stroke={strokeColor}
-                            strokeWidth={dev.quarantined ? '1.5' : '2.5'}
+                            strokeWidth={dev.quarantined ? '1.5' : isSelected ? '3' : '2.5'}
                             strokeDasharray={dev.quarantined ? '4 4' : 'none'}
-                            opacity={dev.quarantined ? 0.25 : 0.65}
+                            opacity={dev.quarantined ? 0.25 : isSelected ? 0.95 : 0.65}
                             className="transition-all group-hover:opacity-90"
                           />
 
@@ -887,32 +910,32 @@ export const TopologyView: React.FC = () => {
                   </g>
 
                   {/* Central Router / Gateway Node (Draggable) */}
-                  {gatewayNode && (
-                    <g
-                      transform={`translate(${layout.gwX}, ${layout.gwY})`}
-                      onPointerDown={(e) => handleNodePointerDown(e, gatewayNode.id, layout.gwX, layout.gwY)}
-                      className={`group ${draggingNodeId === gatewayNode.id ? 'cursor-grabbing' : 'cursor-grab'}`}
-                    >
-                      {/* Selection Ring */}
-                      {selectedNodeId === gatewayNode.id && (
-                        <circle r="36" fill="none" stroke="#10B981" strokeWidth="1.5" strokeDasharray="3 3" />
-                      )}
-                      <circle
-                        r="28"
-                        fill="#111113"
-                        stroke="#10B981"
-                        strokeWidth={draggingNodeId === gatewayNode.id ? '3.5' : '2.5'}
-                        className="transition-all group-hover:stroke-emerald-400 group-hover:scale-105 shadow-lg"
-                      />
-                      <Router className="w-6 h-6 text-emerald-400 pointer-events-none" x="-12" y="-12" />
-                      <text y="44" textAnchor="middle" fill="#FAFAFA" fontSize="11" fontWeight="600" fontFamily="Geist" className="pointer-events-none">
-                        {gatewayNode.label || gatewayNode.ip || 'Gateway Router'}
-                      </text>
-                      <text y="56" textAnchor="middle" fill="#10B981" fontSize="9" fontFamily="JetBrains Mono" className="pointer-events-none">
-                        {gatewayNode.ip || '192.168.1.1'}
-                      </text>
-                    </g>
-                  )}
+                  {gatewayNode && (() => {
+                    const isGwSelected = selectedNodeId === gatewayNode.id;
+                    const gwStrokeColor = isGwSelected ? '#F97316' : '#10B981';
+                    return (
+                      <g
+                        transform={`translate(${layout.gwX}, ${layout.gwY})`}
+                        onPointerDown={(e) => handleNodePointerDown(e, gatewayNode.id, layout.gwX, layout.gwY)}
+                        className={`group ${draggingNodeId === gatewayNode.id ? 'cursor-grabbing' : 'cursor-grab'}`}
+                      >
+                        <circle
+                          r="28"
+                          fill="#111113"
+                          stroke={gwStrokeColor}
+                          strokeWidth={isGwSelected || draggingNodeId === gatewayNode.id ? '3.5' : '2.5'}
+                          className={`transition-all ${isGwSelected ? 'group-hover:stroke-orange-400' : 'group-hover:stroke-emerald-400'} group-hover:scale-105 shadow-lg`}
+                        />
+                        <Router className={`w-6 h-6 ${isGwSelected ? 'text-orange-400' : 'text-emerald-400'} pointer-events-none`} x="-12" y="-12" />
+                        <text y="44" textAnchor="middle" fill="#FAFAFA" fontSize="11" fontWeight="600" fontFamily="Geist" className="pointer-events-none">
+                          {gatewayNode.label || gatewayNode.ip || 'Gateway Router'}
+                        </text>
+                        <text y="56" textAnchor="middle" fill={isGwSelected ? '#FB923C' : '#10B981'} fontSize="9" fontFamily="JetBrains Mono" className="pointer-events-none">
+                          {gatewayNode.ip || '192.168.1.1'}
+                        </text>
+                      </g>
+                    );
+                  })()}
 
                   {/* Connected Devices with Live Metrics (Draggable) */}
                   {layout.nodes
@@ -922,7 +945,14 @@ export const TopologyView: React.FC = () => {
                       const isDragging = node.id === draggingNodeId;
                       const isCrit = node.riskSeverity === 'critical' || node.quarantined;
                       const isSusp = node.riskSeverity === 'suspicious';
-                      const strokeColor = isCrit ? '#EF4444' : isSusp ? '#F59E0B' : '#10B981';
+                      // When selected, turn what's green on the node into orange (#F97316)
+                      const strokeColor = isCrit
+                        ? '#EF4444'
+                        : isSusp
+                        ? '#F59E0B'
+                        : isSelected
+                        ? '#F97316'
+                        : '#10B981';
 
                       const DevIcon = getDeviceIcon(node);
                       const devStats = node.routerTraffic || trafficSummary?.deviceStats?.[node.id];
@@ -935,22 +965,17 @@ export const TopologyView: React.FC = () => {
                           onPointerDown={(e) => handleNodePointerDown(e, node.id, node.x, node.y)}
                           className={`group ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                         >
-                          {/* Outer Selection Ring */}
-                          {isSelected && (
-                            <circle r="34" fill="none" stroke="#FAFAFA" strokeWidth="1.5" strokeDasharray="3 3" />
-                          )}
-
                           {/* Node Body Circle */}
                           <circle
                             r="22"
                             fill="#18181B"
                             stroke={strokeColor}
-                            strokeWidth={isSelected || isDragging ? '3' : '2'}
+                            strokeWidth={isSelected || isDragging ? '3.5' : '2'}
                             className="transition-all group-hover:scale-110"
                           />
 
                           {/* Hardware Icon */}
-                          <DevIcon className="w-5 h-5 text-[#FAFAFA] pointer-events-none" x="-10" y="-10" />
+                          <DevIcon className={`w-5 h-5 ${isSelected ? 'text-orange-400' : 'text-[#FAFAFA]'} pointer-events-none`} x="-10" y="-10" />
 
                           {/* Router Request Count Badge (Top-Right) */}
                           <g transform="translate(14, -18)" className="pointer-events-none">
@@ -961,7 +986,7 @@ export const TopologyView: React.FC = () => {
                               height="15"
                               rx="7.5"
                               fill="#09090B"
-                              stroke="#3F3F46"
+                              stroke={isSelected ? '#F97316' : '#3F3F46'}
                               strokeWidth="1"
                             />
                             <text
@@ -987,7 +1012,7 @@ export const TopologyView: React.FC = () => {
                             textAnchor="middle"
                             fill="#FAFAFA"
                             fontSize="11"
-                            fontWeight="500"
+                            fontWeight={isSelected ? '600' : '500'}
                             fontFamily="Geist"
                             className="pointer-events-none"
                           >
@@ -996,7 +1021,7 @@ export const TopologyView: React.FC = () => {
                           <text
                             y="48"
                             textAnchor="middle"
-                            fill="#71717A"
+                            fill={isSelected ? '#FB923C' : '#71717A'}
                             fontSize="9.5"
                             fontFamily="JetBrains Mono"
                             className="pointer-events-none"
@@ -1043,7 +1068,7 @@ export const TopologyView: React.FC = () => {
         </div>
 
         {/* Node & Router Request Inspector Panel */}
-        <div className="bg-[#111113] border border-[#27272A] rounded-lg p-4 flex flex-col justify-between max-h-[640px] overflow-y-auto">
+        <div ref={inspectorRef} className="bg-[#111113] border border-[#27272A] rounded-lg p-4 flex flex-col justify-between max-h-[640px] overflow-y-auto">
           <div className="space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#27272A]">
               <div className="flex items-center gap-2">
@@ -1053,11 +1078,21 @@ export const TopologyView: React.FC = () => {
                 </h3>
               </div>
               {selectedNode && (
-                <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
-                  selectedNode.status === 'online' ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/40' : 'bg-zinc-800 text-zinc-400 border-zinc-700'
-                }`}>
-                  {selectedNode.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+                    selectedNode.status === 'online' ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/40' : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  }`}>
+                    {selectedNode.status}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedNodeId(null)}
+                    className="text-zinc-400 hover:text-zinc-200 text-xs px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors cursor-pointer"
+                    title="Deselect node (Esc)"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
             </div>
 
