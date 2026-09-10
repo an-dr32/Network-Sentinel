@@ -6,10 +6,11 @@
     --font-mono: 'JetBrains Mono', monospace;
   }
 
-  body {
+  html, body {
     font-family: var(--font-sans);
     background-color: #09090B;
     color: #FAFAFA;
+    overscroll-behavior-x: none;
   }
 
   code, pre, .font-mono {
