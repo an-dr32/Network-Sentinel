@@ -56,6 +56,17 @@ interface NetworkContextType {
   detectAllDevicesOs: () => Promise<{ count: number; devices: Device[] }>;
   isMonitoringActive: boolean;
   toggleMonitoringMode: (enabled?: boolean) => Promise<boolean>;
+  isAutoScanActive: boolean;
+  autoScanInterval: number;
+  autoScanIsIndefinite: boolean;
+  autoScanSessionDuration: number;
+  autoScanCountdown: number;
+  autoScanCompletedSweeps: number;
+  startAutoScan: (intervalSeconds?: number, isIndefinite?: boolean, sessionSeconds?: number) => void;
+  stopAutoScan: () => void;
+  setAutoScanInterval: (intervalSeconds: number) => void;
+  setAutoScanIsIndefinite: (isIndefinite: boolean) => void;
+  setAutoScanSessionDuration: (sessionSeconds: number) => void;
 }
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
@@ -77,6 +88,37 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [scanRemainingSeconds, setScanRemainingSeconds] = useState(0);
   const [scanTotalSeconds, setScanTotalSeconds] = useState(0);
   const scanTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-Scan States & Options
+  const [isAutoScanActive, setIsAutoScanActive] = useState<boolean>(false);
+  const [autoScanInterval, setAutoScanInterval] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('sentinel_autoscan_interval');
+      return saved ? parseInt(saved, 10) : 30;
+    } catch {
+      return 30;
+    }
+  });
+  const [autoScanIsIndefinite, setAutoScanIsIndefinite] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('sentinel_autoscan_indefinite');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [autoScanSessionDuration, setAutoScanSessionDuration] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('sentinel_autoscan_session');
+      return saved ? parseInt(saved, 10) : 0; // 0 = indefinite
+    } catch {
+      return 0;
+    }
+  });
+  const [autoScanCountdown, setAutoScanCountdown] = useState<number>(0);
+  const [autoScanCompletedSweeps, setAutoScanCompletedSweeps] = useState<number>(0);
+  const autoScanTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoScanStartTimeRef = useRef<number>(0);
 
   const [optimisticMonitoring, setOptimisticMonitoring] = useState<boolean | null>(null);
   const isMonitoringActive = optimisticMonitoring !== null
@@ -512,6 +554,95 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const stopAutoScan = () => {
+    if (autoScanTimerRef.current) {
+      clearInterval(autoScanTimerRef.current);
+      autoScanTimerRef.current = null;
+    }
+    setIsAutoScanActive(false);
+    setAutoScanCountdown(0);
+  };
+
+  const startAutoScan = (intervalSeconds?: number, isIndefinite?: boolean, sessionSeconds?: number) => {
+    if (autoScanTimerRef.current) {
+      clearInterval(autoScanTimerRef.current);
+      autoScanTimerRef.current = null;
+    }
+
+    const interval = intervalSeconds !== undefined && intervalSeconds > 0 ? intervalSeconds : autoScanInterval;
+    const indefinite = isIndefinite !== undefined ? isIndefinite : autoScanIsIndefinite;
+    const session = sessionSeconds !== undefined ? sessionSeconds : autoScanSessionDuration;
+
+    setAutoScanInterval(interval);
+    setAutoScanIsIndefinite(indefinite);
+    setAutoScanSessionDuration(session);
+
+    try {
+      localStorage.setItem('sentinel_autoscan_interval', String(interval));
+      localStorage.setItem('sentinel_autoscan_indefinite', String(indefinite));
+      localStorage.setItem('sentinel_autoscan_session', String(session));
+    } catch {}
+
+    setIsAutoScanActive(true);
+    setAutoScanCompletedSweeps(0);
+    autoScanStartTimeRef.current = Date.now();
+
+    // Trigger initial scan sweep immediately
+    setIsScanning(true);
+    api.triggerScan().then(() => {
+      refreshAll();
+      setAutoScanCompletedSweeps(1);
+    }).catch(console.error).finally(() => {
+      setTimeout(() => setIsScanning(false), 900);
+    });
+
+    let remainingInInterval = interval;
+    setAutoScanCountdown(remainingInInterval);
+
+    autoScanTimerRef.current = setInterval(async () => {
+      remainingInInterval -= 1;
+      setAutoScanCountdown(Math.max(0, remainingInInterval));
+
+      // If a limited session duration is set, check if elapsed
+      if (!indefinite && session > 0) {
+        const elapsed = Math.floor((Date.now() - autoScanStartTimeRef.current) / 1000);
+        if (elapsed >= session) {
+          if (autoScanTimerRef.current) {
+            clearInterval(autoScanTimerRef.current);
+            autoScanTimerRef.current = null;
+          }
+          setIsAutoScanActive(false);
+          setAutoScanCountdown(0);
+          return;
+        }
+      }
+
+      if (remainingInInterval <= 0) {
+        remainingInInterval = interval;
+        setAutoScanCountdown(interval);
+        setIsScanning(true);
+        try {
+          await api.triggerScan();
+          await refreshAll();
+          setAutoScanCompletedSweeps((prev) => prev + 1);
+        } catch (e) {
+          console.error('Auto-scan sweep error:', e);
+        } finally {
+          setTimeout(() => setIsScanning(false), 900);
+        }
+      }
+    }, 1000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (autoScanTimerRef.current) {
+        clearInterval(autoScanTimerRef.current);
+        autoScanTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const runSecurityLabScenario = async (
     scenario: 'new_device' | 'port_scan' | 'dns_anomaly' | 'traffic_spike' | 'ip_change',
     payload?: any
@@ -627,6 +758,17 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         detectAllDevicesOs,
         isMonitoringActive,
         toggleMonitoringMode,
+        isAutoScanActive,
+        autoScanInterval,
+        autoScanIsIndefinite,
+        autoScanSessionDuration,
+        autoScanCountdown,
+        autoScanCompletedSweeps,
+        startAutoScan,
+        stopAutoScan,
+        setAutoScanInterval,
+        setAutoScanIsIndefinite,
+        setAutoScanSessionDuration,
       }}
     >
       {children}
