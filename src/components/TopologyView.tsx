@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   Info,
   Radio,
+  Radar,
   Zap,
   Activity,
   ArrowRight,
@@ -745,10 +746,25 @@ export const TopologyView: React.FC = () => {
               <button
                 onClick={handleScan}
                 disabled={isScanning}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-md transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+                className={`relative overflow-hidden select-none inline-flex items-center gap-2 px-3 h-8 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                  isScanning
+                    ? 'bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-700/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                    : 'bg-[#18181B] hover:bg-zinc-800 border border-zinc-700/70 text-zinc-300 hover:text-zinc-100 shadow-sm'
+                } disabled:opacity-50`}
+                title={isScanning ? 'Scanning subnet...' : 'Scan Subnet Now (will automatically start Monitoring Mode)'}
               >
-                <Radio className="w-3.5 h-3.5" />
+                <Radar className={`w-3.5 h-3.5 ${isScanning ? 'text-emerald-400 animate-spin' : 'text-sky-400/80'} shrink-0`} />
                 <span>{isScanning ? 'Scanning Subnet...' : 'Scan Subnet Now'}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    isScanning
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1'
+                      : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                  }`}
+                >
+                  {isScanning && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+                  {isScanning ? 'SCAN' : 'READY'}
+                </span>
               </button>
             </div>
           ) : (

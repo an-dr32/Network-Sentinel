@@ -81,7 +81,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [optimisticMonitoring, setOptimisticMonitoring] = useState<boolean | null>(null);
   const isMonitoringActive = optimisticMonitoring !== null
     ? optimisticMonitoring
-    : (status ? (status.collectorActive !== false && status.mode !== 'paused') : true);
+    : (status ? (status.collectorActive === true && status.mode === 'monitoring') : false);
 
   // Client-side automatic network state detection (Ethernet / Wi-Fi / Both / Offline)
   const [clientNetwork, setClientNetwork] = useState(() => getBrowserConnectionState());

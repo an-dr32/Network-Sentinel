@@ -119,11 +119,7 @@ async function startServer() {
     broadcast('system.status', getSystemStatus());
   });
 
-  // Start background collector & real-time router request monitor
-  await collectorManager.start();
-  trafficMonitor.start();
-
-  // Broadcast real-time router interactions to WebSocket clients
+  // Wire router interactions to WebSocket clients
   trafficMonitor.onRouterRequest((reqEvent, summary) => {
     broadcast('router.request', reqEvent);
     broadcast('topology.traffic', summary);
@@ -682,6 +678,8 @@ async function startServer() {
   // Security Lab Reset
   app.post('/api/security-lab/reset', (req, res) => {
     db.resetDatabase();
+    broadcast('devices.updated', db.getDevices());
+    broadcast('alerts.updated', db.getAlerts());
     broadcast('system.status', getSystemStatus());
     broadcast('topology.updated', generateTopologyData());
     broadcast('baseline.updated', db.getBaseline());
@@ -942,11 +940,45 @@ async function startServer() {
       });
     }
 
+    // Monitoring Mode starts itself after the subnet scan
+    let monitoringAutoStarted = false;
+    if (!collectorManager.getIsMonitoring()) {
+      await collectorManager.start();
+      trafficMonitor.start();
+      monitoringAutoStarted = true;
+
+      const event: NetworkEvent = {
+        id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        type: 'monitoring_event',
+        severity: 'info',
+        title: 'Monitoring Mode Auto-Started',
+        description: 'Passive packet inspection, traffic telemetry, and anomaly heuristics automatically started following the subnet scan.',
+        evidence: {
+          action: 'auto_start_after_scan',
+          collectorActive: true,
+          timestamp: new Date().toISOString(),
+        },
+        simulated: false,
+      };
+      db.addEvent(event);
+      broadcast('event.created', event);
+    }
+
     const currentDevices = db.getDevices();
+    const currentStatus = getSystemStatus();
     broadcast('devices.updated', currentDevices);
-    broadcast('system.status', getSystemStatus());
+    broadcast('system.status', currentStatus);
+    broadcast('monitoring.updated', { active: true, mode: currentStatus.mode });
     broadcast('topology.updated', generateTopologyData());
-    res.json({ count: currentDevices.length, devices: currentDevices, durationSeconds });
+    res.json({
+      count: currentDevices.length,
+      devices: currentDevices,
+      durationSeconds,
+      monitoringActive: true,
+      mode: currentStatus.mode,
+      monitoringAutoStarted,
+    });
   });
 
   // Vite Middleware in dev or static serving in production
@@ -966,18 +998,6 @@ async function startServer() {
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Network Sentinel] Server running on http://0.0.0.0:${PORT}`);
-
-    // Perform initial discovery so disconnected or historic nodes are cleanly catalogued
-    setTimeout(async () => {
-      try {
-        await collectorManager.discoverNow();
-        broadcast('devices.updated', db.getDevices());
-        broadcast('system.status', getSystemStatus());
-        broadcast('topology.updated', generateTopologyData());
-      } catch (err) {
-        console.warn('[Network Sentinel] Initial discovery sweep warning:', err);
-      }
-    }, 1200);
   });
 }
 

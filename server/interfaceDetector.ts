@@ -144,36 +144,22 @@ export async function getSystemNetworkInterfaces(): Promise<NetworkInterfaceInfo
     let displayName = name;
     let type: NetworkInterfaceInfo['type'] = 'other';
 
-    if (isLoopback) {
-      type = 'loopback';
-      displayName = `Loopback (${name})`;
-    } else if (isLinkLocal) {
-      type = 'link-local';
-      displayName = `Internal Link-Local (${name})`;
-    } else if (lowerName.includes('docker') || lowerName.includes('br-') || lowerName.includes('veth')) {
-      type = 'virtual';
-      displayName = `Virtual (${name})`;
-    } else if (process.platform === 'darwin') {
+    if (process.platform === 'darwin') {
       const hw = macHardwareMap.get(name);
       if (hw) {
         displayName = `${hw.port} (${name})`;
         isWifi = hw.isWifi;
         isEthernet = hw.isEthernet;
-        type = isWifi ? 'wifi' : isEthernet ? 'ethernet' : 'other';
       } else {
-        // Only classify if verified
         if (lowerName === 'en0') {
           isWifi = true;
-          type = 'wifi';
         } else if (lowerName.startsWith('en')) {
           isEthernet = true;
-          type = 'ethernet';
         }
       }
     } else if (process.platform === 'linux') {
       if (lowerName.startsWith('wl') || lowerName.includes('wifi') || lowerName.includes('wlan')) {
         isWifi = true;
-        type = 'wifi';
       } else if (
         lowerName.startsWith('eth') ||
         lowerName.startsWith('enp') ||
@@ -182,14 +168,30 @@ export async function getSystemNetworkInterfaces(): Promise<NetworkInterfaceInfo
         lowerName.startsWith('enx')
       ) {
         isEthernet = true;
-        type = 'ethernet';
       }
+    }
+
+    if (isLoopback) {
+      type = 'loopback';
+      displayName = `Loopback (${name})`;
+    } else if (lowerName.includes('docker') || lowerName.includes('br-') || lowerName.includes('veth')) {
+      type = 'virtual';
+      displayName = `Virtual (${name})`;
+    } else if (isEthernet) {
+      type = 'ethernet';
+      displayName = `Ethernet Adapter (${name})`;
+    } else if (isWifi) {
+      type = 'wifi';
+      displayName = `Wi-Fi Adapter (${name})`;
+    } else if (isLinkLocal) {
+      type = 'link-local';
+      displayName = `Link-Local (${name})`;
     }
 
     let subnet: string | undefined;
     let broadcastAddress: string | undefined;
 
-    if (ipv4 && ipv4.address && ipv4.netmask && isRoutableIp(ipv4.address)) {
+    if (ipv4 && ipv4.address && ipv4.netmask) {
       try {
         const calc = calculateSubnetAndBroadcast(ipv4.address, ipv4.netmask);
         subnet = calc.subnetCidr;
@@ -200,7 +202,7 @@ export async function getSystemNetworkInterfaces(): Promise<NetworkInterfaceInfo
     const isConnected = Boolean(
       ipv4 &&
       ipv4.address &&
-      isRoutableIp(ipv4.address)
+      !isLoopback
     );
 
     const isDefaultRoute = defaultRoute.interfaceName === name && isRoutableIp(ipv4?.address);
@@ -216,7 +218,7 @@ export async function getSystemNetworkInterfaces(): Promise<NetworkInterfaceInfo
       type,
       isEthernet,
       isWifi,
-      ipAddress: isConnected ? ipv4?.address : (isLinkLocal ? rawIp : undefined),
+      ipAddress: ipv4?.address,
       netmask: ipv4?.netmask,
       macAddress: hasRealMac ? representative.mac : undefined,
       subnet,
@@ -224,41 +226,6 @@ export async function getSystemNetworkInterfaces(): Promise<NetworkInterfaceInfo
       isConnected,
       isDefaultRoute,
     });
-  }
-
-  // If no physical Ethernet or Wi-Fi interfaces were discovered (e.g. running in Docker/Cloud Run container)
-  const hasPhysical = results.some((r) => r.isEthernet || r.isWifi);
-  if (!hasPhysical) {
-    results.push(
-      {
-        name: 'eth0',
-        displayName: 'Ethernet Adapter (eth0)',
-        type: 'ethernet',
-        isEthernet: true,
-        isWifi: false,
-        ipAddress: '192.168.1.100',
-        netmask: '255.255.255.0',
-        subnet: '192.168.1.0/24',
-        broadcastAddress: '192.168.1.255',
-        isConnected: true,
-        isDefaultRoute: true,
-        macAddress: 'd4:be:d9:44:55:66',
-      },
-      {
-        name: 'wlan0',
-        displayName: 'Wi-Fi Adapter 802.11ax (wlan0)',
-        type: 'wifi',
-        isEthernet: false,
-        isWifi: true,
-        ipAddress: '192.168.1.105',
-        netmask: '255.255.255.0',
-        subnet: '192.168.1.0/24',
-        broadcastAddress: '192.168.1.255',
-        isConnected: false,
-        isDefaultRoute: false,
-        macAddress: '3c:22:fb:77:88:99',
-      }
-    );
   }
 
   // Sort: Connected Physical Interfaces first

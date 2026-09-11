@@ -6,7 +6,7 @@ import { db } from '../db';
 import { NetworkEvent } from '../types';
 
 export class CollectorManager {
-  private activeCollector: NetworkCollector = mockCollector;
+  private activeCollector: NetworkCollector = process.platform === 'darwin' ? macosCollector : linuxCollector;
   private isMonitoring = false;
   private listeners: ((event: NetworkEvent) => void)[] = [];
 
@@ -25,7 +25,7 @@ export class CollectorManager {
     } else if (settings.collectorType === 'macos' && (await macosCollector.isAvailable())) {
       this.activeCollector = macosCollector;
     } else {
-      this.activeCollector = mockCollector;
+      this.activeCollector = linuxCollector;
     }
   }
 

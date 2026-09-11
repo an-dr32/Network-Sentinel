@@ -171,9 +171,9 @@ export class TrafficMonitor {
     });
 
     return {
-      gatewayIp: gateway ? gateway.currentIp : '192.168.1.1',
+      gatewayIp: gateway ? gateway.currentIp : '',
       totalRequests,
-      requestsPerMinute: +(totalRequests > 0 ? (totalRequests / 10).toFixed(1) : 4.5),
+      requestsPerMinute: +(totalRequests > 0 ? (totalRequests / 10).toFixed(1) : 0),
       deviceStats: statsObj,
       globalTypeCounts,
       recentRequests: this.recentRequests.slice(0, 30),

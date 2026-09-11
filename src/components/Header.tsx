@@ -303,69 +303,100 @@ export const Header: React.FC = () => {
 
         {/* Scan Subnet Dropdown Button & Submenu (placed to the left of monitoring mode) */}
         <div className="relative" ref={scanMenuRef}>
-          {isScanning && scanIsIndefinite ? (
-            <div className="flex items-center rounded-md bg-amber-500 hover:bg-amber-400 text-zinc-950 shadow-sm transition-colors font-medium">
-              <button
-                id="trigger-scan-btn"
-                onClick={() => cancelDiscoveryScan()}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold"
-                title="Subnet discovery is running indefinitely in overdrive mode. Click to stop."
-              >
-                <Radar className="w-3.5 h-3.5 animate-spin text-zinc-950" />
-                <span>Scanning Indefinitely</span>
-                <Square className="w-3 h-3 fill-current ml-0.5 text-zinc-950" />
-              </button>
-              <button
-                id="scan-subnet-dropdown-btn"
-                onClick={() => setIsScanMenuOpen(!isScanMenuOpen)}
-                className="px-1.5 py-1 border-l border-zinc-900/20 hover:bg-amber-600/30 text-zinc-950 transition-colors"
-                title="Subnet Scan Duration Options"
-                aria-label="Open Subnet Scan Duration Submenu"
-              >
-                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isScanMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center rounded-md bg-zinc-100 hover:bg-white text-zinc-900 shadow-sm transition-colors">
-              <button
-                id="trigger-scan-btn"
-                onClick={() => handleTriggerScan()}
-                disabled={isScanning}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-                title={
+          <div
+            className={`relative overflow-hidden select-none flex items-center h-8 rounded-md text-xs font-medium transition-all ${
+              isScanning
+                ? scanIsIndefinite || isScanOverdrive
+                  ? 'bg-amber-950/40 hover:bg-amber-900/50 border border-amber-700/60 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
+                  : 'bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-700/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                : 'bg-[#18181B] hover:bg-zinc-800 border border-zinc-700/70 text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <button
+              type="button"
+              id="trigger-scan-btn"
+              onClick={() => (isScanning && scanIsIndefinite ? cancelDiscoveryScan() : handleTriggerScan())}
+              disabled={isScanning && !scanIsIndefinite}
+              className="h-full flex items-center gap-2 px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed cursor-pointer"
+              title={
+                isScanning
+                  ? scanIsIndefinite
+                    ? 'Subnet discovery is running indefinitely in overdrive mode. Click to stop.'
+                    : 'Subnet discovery is currently active'
+                  : scanIsIndefinite
+                  ? 'Launch continuous indefinite subnet discovery sweep (starts Monitoring Mode automatically)'
+                  : scanDuration === 0
+                  ? 'Trigger immediate subnet discovery sweep (starts Monitoring Mode automatically)'
+                  : `Run timed subnet scan for ${scanDuration}s (starts Monitoring Mode automatically)`
+              }
+            >
+              <Radar
+                className={`w-3.5 h-3.5 shrink-0 ${
                   isScanning
-                    ? 'Subnet discovery is currently active'
+                    ? 'animate-spin ' + (scanIsIndefinite || isScanOverdrive ? 'text-amber-400' : 'text-emerald-400')
+                    : 'text-sky-400/80'
+                }`}
+              />
+              <span>
+                {isScanning
+                  ? scanRemainingSeconds > 0
+                    ? `Scanning (${scanRemainingSeconds}s)`
                     : scanIsIndefinite
-                    ? 'Launch continuous indefinite subnet discovery sweep'
-                    : scanDuration === 0
-                    ? 'Trigger immediate subnet discovery sweep'
-                    : `Run timed subnet scan for ${scanDuration}s`
-                }
+                    ? 'Scanning Indefinitely'
+                    : 'Scanning Subnet...'
+                  : scanIsIndefinite
+                  ? 'Scan (Indefinite)'
+                  : scanDuration === 0
+                  ? 'Scan Subnet'
+                  : `Scan Subnet (${scanDuration}s)`}
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                  isScanning
+                    ? scanIsIndefinite || isScanOverdrive
+                      ? 'flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                }`}
               >
-                <Radar className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin text-zinc-900' : ''}`} />
-                <span>
-                  {isScanning
-                    ? scanRemainingSeconds > 0
-                      ? `Scanning (${scanRemainingSeconds}s)`
-                      : 'Scanning...'
-                    : scanIsIndefinite
-                    ? 'Scan (Indefinite)'
-                    : scanDuration === 0
-                    ? 'Scan Subnet'
-                    : `Scan Subnet (${scanDuration}s)`}
-                </span>
-              </button>
-              <button
-                id="scan-subnet-dropdown-btn"
-                onClick={() => setIsScanMenuOpen(!isScanMenuOpen)}
-                className="px-1.5 py-1 border-l border-zinc-300 hover:bg-zinc-200 text-zinc-900 transition-colors"
-                title="Configure Subnet Scan Duration"
-                aria-label="Open Subnet Scan Duration Submenu"
-              >
-                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isScanMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-            </div>
-          )}
+                {isScanning && (
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full animate-ping ${
+                      scanIsIndefinite || isScanOverdrive ? 'bg-amber-400' : 'bg-emerald-400'
+                    }`}
+                  />
+                )}
+                {isScanning
+                  ? scanRemainingSeconds > 0
+                    ? `${scanRemainingSeconds}s`
+                    : 'SCAN'
+                  : scanIsIndefinite
+                  ? 'INF'
+                  : 'READY'}
+              </span>
+              {isScanning && scanIsIndefinite && (
+                <Square className="w-3 h-3 fill-current ml-0.5 text-amber-300" />
+              )}
+            </button>
+            <button
+              type="button"
+              id="scan-subnet-dropdown-btn"
+              onClick={() => setIsScanMenuOpen(!isScanMenuOpen)}
+              className={`h-full px-1.5 flex items-center justify-center border-l transition-colors cursor-pointer ${
+                isScanning
+                  ? scanIsIndefinite || isScanOverdrive
+                    ? 'border-amber-700/60 hover:bg-amber-900/40 text-amber-300'
+                    : 'border-emerald-700/60 hover:bg-emerald-900/40 text-emerald-300'
+                  : 'border-zinc-700/70 hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Configure Subnet Scan Duration"
+              aria-label="Open Subnet Scan Duration Submenu"
+            >
+              <ChevronDown
+                className={`w-3 h-3 transition-transform duration-200 ${isScanMenuOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+          </div>
 
           {/* Subnet Scan Duration Submenu */}
           {isScanMenuOpen && (
@@ -730,7 +761,7 @@ export const Header: React.FC = () => {
             onPointerDown={handleMonitoringPointerDown}
             onPointerUp={handleMonitoringPointerUp}
             onPointerCancel={handleMonitoringPointerCancel}
-            className={`relative overflow-hidden select-none flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+            className={`relative overflow-hidden select-none flex items-center gap-2 px-3 h-8 rounded-md text-xs font-medium transition-all cursor-pointer ${
               isMonitoringActive
                 ? isHoldingOff
                   ? 'bg-red-950/90 border border-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.45)] ring-1 ring-red-500/60'
@@ -740,7 +771,7 @@ export const Header: React.FC = () => {
             title={
               isMonitoringActive
                 ? 'Monitoring Mode is ON. Hold button pressed for 4 seconds to turn OFF.'
-                : 'Monitoring Mode is OFF. Click to turn ON.'
+                : 'Monitoring Mode is OFF. Click to turn ON, or run a Subnet Scan to start automatically.'
             }
           >
             {/* Animated Fill Overlay when holding to turn off */}

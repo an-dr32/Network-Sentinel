@@ -15,7 +15,7 @@ import {
 import { useNetwork } from '../context/NetworkContext';
 
 export const Sidebar: React.FC = () => {
-  const { activeView, setActiveView, devices, events, alerts, status } = useNetwork();
+  const { activeView, setActiveView, devices, events, alerts, status, isMonitoringActive } = useNetwork();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('sentinel_sidebar_collapsed') === 'true';
@@ -243,32 +243,50 @@ export const Sidebar: React.FC = () => {
         className={`border-t border-[#27272A] bg-[#09090B]/60 transition-all duration-300 ${
           isCollapsed ? 'p-2.5 flex flex-col items-center' : 'p-3'
         }`}
-        title={`Collector: ${status?.collectorType || 'mock'} | Interface: ${status?.interfaceName || 'eth0'} | ${status?.onlineDevices || 0} online`}
+        title={
+          isMonitoringActive
+            ? `Collector Active: ${status?.collectorType || 'linux'} | Interface: ${status?.interfaceName || 'auto'} | ${status?.onlineDevices || 0} online`
+            : `Collector Standby | Monitoring Mode starts automatically on first subnet scan`
+        }
       >
         {!isCollapsed ? (
           <>
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  {isMonitoringActive && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span
+                    className={`relative inline-flex rounded-full h-2 w-2 ${
+                      isMonitoringActive ? 'bg-emerald-500' : 'bg-amber-500/80'
+                    }`}
+                  ></span>
                 </span>
-                <span className="text-xs text-[#FAFAFA] font-medium">Passive Collector</span>
+                <span className="text-xs text-[#FAFAFA] font-medium">
+                  {isMonitoringActive ? 'Passive Collector' : 'Collector Standby'}
+                </span>
               </div>
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 uppercase">
-                {status?.collectorType || 'mock'}
+                {isMonitoringActive ? (status?.collectorType || 'linux') : 'STANDBY'}
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px] text-[#71717A] font-mono">
-              <span>Interface: {status?.interfaceName || 'eth0'}</span>
+              <span>Interface: {status?.interfaceName || 'auto'}</span>
               <span>{status?.onlineDevices || 0} online</span>
             </div>
           </>
         ) : (
           <div className="flex flex-col items-center gap-1.5 py-1">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              {isMonitoringActive && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                  isMonitoringActive ? 'bg-emerald-500' : 'bg-amber-500/80'
+                }`}
+              ></span>
             </span>
             <span className="text-[9px] font-mono text-zinc-400">
               {status?.onlineDevices || 0}

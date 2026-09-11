@@ -41,7 +41,7 @@ export const SettingsView: React.FC = () => {
   const [settings, setSettings] = useState<any>({
     subnet: status?.subnet || '',
     interfaceName: 'auto',
-    collectorType: 'mock',
+    collectorType: typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac') ? 'macos' : 'linux',
     autoScanIntervalSeconds: 8,
     baselineDurationSeconds: 15,
     riskWeights: {
@@ -392,7 +392,6 @@ export const SettingsView: React.FC = () => {
                 onChange={(e) => setSettings({ ...settings, collectorType: e.target.value })}
                 className="w-full bg-[#18181B] border border-[#27272A] rounded-md px-3 py-2 text-[#FAFAFA] focus:outline-none focus:border-zinc-500"
               >
-                <option value="mock">Mock / Security Lab Demo Driver</option>
                 <option value="linux">Host Linux Neighbor Table (/proc/net/arp)</option>
                 <option value="macos">macOS Native Neighbor Table (arp -an)</option>
                 <option value="windows">Windows IP Neighbor Table</option>
