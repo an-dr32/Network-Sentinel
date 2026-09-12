@@ -313,7 +313,14 @@ export const Header: React.FC = () => {
           )}
         </button>
 
-        {/* Scan Subnet Dropdown Button & Submenu (placed to the left of monitoring mode) */}
+        {/* 
+          Scan Subnet Dropdown Button & Submenu:
+          - Dimensionally aligned with Monitoring Mode (h-8 height, rounded-md corners, font-medium).
+          - Left button triggers immediate scan, cancels running indefinite sweep, or runs immediate auto-scan burst.
+          - Right button toggles the tabbed configuration modal.
+          - Tab 1: 'duration' (Single-sweep duration, presets 10s-60s, continuous slider, Overdrive mode).
+          - Tab 2: 'auto' (Recurring auto-scan background engine, interval sliders, session limits, live countdown).
+        */}
         <div className="relative" ref={scanMenuRef}>
           <div
             className={`relative overflow-hidden select-none flex items-center h-8 rounded-md text-xs font-medium transition-all ${

@@ -464,6 +464,10 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await refreshAll();
   };
 
+  /**
+   * Disarms any running single-scan or continuous overdrive timer
+   * and resets scanning states to idle.
+   */
   const cancelDiscoveryScan = () => {
     if (scanTimerRef.current) {
       clearInterval(scanTimerRef.current);
@@ -474,6 +478,23 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setScanTotalSeconds(0);
   };
 
+  /**
+   * Triggers an on-demand subnet discovery sweep.
+   *
+   * Operational Modes:
+   * 1. Instant (durationSeconds === 0, isIndefinite === false):
+   *    - Hits POST /api/discovery/scan once and briefly displays scan indicator.
+   * 2. Timed Window (durationSeconds > 0):
+   *    - Sets up a 1-second countdown tick for UI display.
+   *    - Re-executes active discovery sweep every 4 seconds to capture transient packets.
+   *    - Automatically cleans up and refreshes upon countdown completion.
+   * 3. Overdrive Indefinite (isIndefinite === true):
+   *    - Sweeps continuously every 4 seconds until the user manually cancels or stops.
+   *
+   * Note for Debugging:
+   * - Each sweep triggers POST /api/discovery/scan which automatically boots Monitoring Mode
+   *   if it was previously paused, and enriches nodes with OS fingerprinting.
+   */
   const triggerDiscoveryScan = async (durationSeconds?: number, isIndefinite = false) => {
     if (scanTimerRef.current) {
       clearInterval(scanTimerRef.current);
@@ -490,7 +511,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await api.triggerScan(0, true);
         await refreshAll();
       } catch (e) {
-        console.error('Scan error:', e);
+        console.error('[NetworkContext] Initial overdrive scan sweep failed:', e);
       }
 
       // Keep continuously sweeping every 4 seconds until manually canceled/stopped
@@ -498,7 +519,9 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         try {
           await api.triggerScan(0, true);
           await refreshAll();
-        } catch {}
+        } catch (err) {
+          console.warn('[NetworkContext] Background overdrive sweep error:', err);
+        }
       }, 4000);
       return;
     }
@@ -513,7 +536,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await api.triggerScan(duration);
         await refreshAll();
       } catch (e) {
-        console.error('Scan error:', e);
+        console.error('[NetworkContext] Initial timed scan sweep failed:', e);
       }
 
       let remaining = duration;
@@ -528,7 +551,9 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           try {
             await api.triggerScan();
             await refreshAll();
-          } catch {}
+          } catch (err) {
+            console.warn('[NetworkContext] Intermediate timed scan error:', err);
+          }
         }
 
         if (remaining <= 0) {
@@ -548,12 +573,17 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         await api.triggerScan();
         await refreshAll();
+      } catch (err) {
+        console.error('[NetworkContext] Instant scan sweep failed:', err);
       } finally {
         setTimeout(() => setIsScanning(false), 900);
       }
     }
   };
 
+  /**
+   * Stops the recurring Auto-Scan scheduler and resets the countdown timer.
+   */
   const stopAutoScan = () => {
     if (autoScanTimerRef.current) {
       clearInterval(autoScanTimerRef.current);
@@ -563,6 +593,28 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAutoScanCountdown(0);
   };
 
+  /**
+   * Starts or updates the recurring Auto-Scan background engine.
+   *
+   * Architecture & Debugging Notes:
+   * - Interval: Time between scans in seconds (e.g., 10s, 30s, 60s, up to 300s).
+   * - Schedule Mode:
+   *    • isIndefinite: true -> Keeps sweeping indefinitely until manually stopped.
+   *    • isIndefinite: false -> Stops automatically once sessionSeconds (e.g. 900s / 15m) have elapsed.
+   * - Storage Persistence:
+   *    • Interval and session options are persisted in localStorage under:
+   *      - 'sentinel_autoscan_interval'
+   *      - 'sentinel_autoscan_indefinite'
+   *      - 'sentinel_autoscan_session'
+   *    • To inspect or reset in browser console:
+   *      localStorage.getItem('sentinel_autoscan_interval')
+   * - Execution Lifecycle:
+   *    1. Instantly fires an initial sweep (`api.triggerScan()`).
+   *    2. Starts a 1-second interval tracking `autoScanCountdown` for the live progress bar.
+   *    3. When countdown reaches 0, triggers `api.triggerScan()`, updates `autoScanCompletedSweeps`,
+   *       and resets the countdown.
+   *    4. If a timed session expires, disarms the timer and sets `isAutoScanActive = false`.
+   */
   const startAutoScan = (intervalSeconds?: number, isIndefinite?: boolean, sessionSeconds?: number) => {
     if (autoScanTimerRef.current) {
       clearInterval(autoScanTimerRef.current);
@@ -581,7 +633,9 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem('sentinel_autoscan_interval', String(interval));
       localStorage.setItem('sentinel_autoscan_indefinite', String(indefinite));
       localStorage.setItem('sentinel_autoscan_session', String(session));
-    } catch {}
+    } catch {
+      // ignore localStorage quotas or private browsing restrictions
+    }
 
     setIsAutoScanActive(true);
     setAutoScanCompletedSweeps(0);
@@ -592,7 +646,9 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     api.triggerScan().then(() => {
       refreshAll();
       setAutoScanCompletedSweeps(1);
-    }).catch(console.error).finally(() => {
+    }).catch((err) => {
+      console.error('[NetworkContext] Initial auto-scan sweep error:', err);
+    }).finally(() => {
       setTimeout(() => setIsScanning(false), 900);
     });
 
@@ -603,7 +659,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       remainingInInterval -= 1;
       setAutoScanCountdown(Math.max(0, remainingInInterval));
 
-      // If a limited session duration is set, check if elapsed
+      // If a limited session duration is configured, check if the session has elapsed
       if (!indefinite && session > 0) {
         const elapsed = Math.floor((Date.now() - autoScanStartTimeRef.current) / 1000);
         if (elapsed >= session) {
@@ -626,7 +682,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           await refreshAll();
           setAutoScanCompletedSweeps((prev) => prev + 1);
         } catch (e) {
-          console.error('Auto-scan sweep error:', e);
+          console.error('[NetworkContext] Auto-scan periodic sweep error:', e);
         } finally {
           setTimeout(() => setIsScanning(false), 900);
         }

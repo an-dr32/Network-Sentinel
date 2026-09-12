@@ -22,7 +22,11 @@ Network Sentinel is a high-contrast, privacy-first network security console desi
   - [6. Security Laboratory (`[SIMULATED]`)](#6-security-laboratory-simulated)
   - [7. Settings & Collector Configuration](#7-settings--collector-configuration)
 - [Header & Side Menu Controls Reference](#header--side-menu-controls-reference)
-  - [Top Header Controls (Monitoring Mode, Demo Lab, Scan Subnet, etc.)](#top-header-controls)
+  - [Top Header Controls Overview](#top-header-controls-overview)
+  - [Subnet Scan & Auto-Scan Tabbed Modal Architecture](#subnet-scan--auto-scan-tabbed-modal-architecture)
+    - [Tab 1: Subnet Scan Duration & Overdrive Mode](#tab-1-subnet-scan-duration--overdrive-mode)
+    - [Tab 2: Auto Scan (Continuous & Scheduled Subnet Sweeps)](#tab-2-auto-scan-continuous--scheduled-subnet-sweeps)
+  - [Monitoring Mode & Subnet Scan Visual Alignment](#monitoring-mode--subnet-scan-visual-alignment)
   - [Side Menu Controls & Animated Collapsible Logo](#side-menu-controls--animated-collapsible-logo)
 - [How to Use the App](#how-to-use-the-app)
   - [Cloud Sandbox / Demo Mode](#cloud-sandbox--demo-mode)
@@ -30,6 +34,7 @@ Network Sentinel is a high-contrast, privacy-first network security console desi
   - [Running on macOS (MacBook, Mac mini, iMac)](#running-on-macos-macbook-mac-mini-imac)
   - [On-Premise Deployment (Linux / Raspberry Pi)](#on-premise-deployment-linux--raspberry-pi)
 - [REST & WebSocket API Reference](#rest--websocket-api-reference)
+- [Developer & Debugging Guide for Humans](#developer--debugging-guide-for-humans)
 - [Data Storage & Privacy](#data-storage--privacy)
 - [Build & Development Commands](#build--development-commands)
 - [Frequently Asked Questions (FAQ)](#frequently-asked-questions-faq)
@@ -243,16 +248,88 @@ A dedicated, clearly labeled testbed for testing detection rules and demonstrati
 
 ## Header & Side Menu Controls Reference
 
-### Top Header Controls
+## Header & Side Menu Controls Reference
+
+### Top Header Controls Overview
 
 The top navigation header houses real-time operational status indicators and quick-action triggers accessible from any view:
 
 | Button / Control | Visual State & Icon | Action & Functionality |
 |---|---|---|
-| **Monitoring Mode / Baseline Learning** | Green Checkmark (`CheckCircle2`) or Amber Pulsing Badge (`BookOpen`) | **Baseline Training & Calibration**: <br>• **Default State ("Monitoring Mode")**: Indicates Sentinel is actively evaluating network activity against established statistical baselines.<br>• **Click Action**: Kicks off a 15-second baseline learning cycle (`POST /api/baseline/start-learning`).<br>• **Active Training State ("Learning Baseline (X%)")**: Shows real-time progress as the engine profiles normal IP-to-MAC pairings, routine throughput, and listening ports.<br>• **Result**: Upon completion, all compliant nodes receive an automatic `-10 pt` baseline bonus, reducing false positives. |
-| **Demo Lab** | Amber Sparkles (`Sparkles`) | **Instant Sandbox Access**: <br>• Provides a direct 1-click shortcut to the **Security Demonstration Laboratory** (`security-lab`).<br>• Enables rapid execution of the guided 5-step incident sequence and controlled threat injection scenarios without navigating through menu trees. |
-| **Scan Subnet** | Radar Scanner (`Radar`) with animated rotation | **Immediate Discovery Sweep**: <br>• Triggers an on-demand active/passive subnet discovery pass (`POST /api/discovery/scan`).<br>• Queries the active collector driver (macOS `arp -an`, Linux `/proc/net/arp`, or Security Lab mock driver).<br>• Refreshes discovered hosts, IP bindings, and TCP/IP OS fingerprints across the inventory and topology map.<br>• The radar icon spins continuously during discovery to provide clear visual execution feedback. |
-| **LIVE / POLLING Connection Badge** | Green Wi-Fi (`Wifi`) or Gray Disconnected (`WifiOff`) | **WebSocket Health Indicator**: <br>• Displays `LIVE` with an emerald indicator when connected to `ws://localhost:3000/ws` for real-time telemetry streaming.<br>• Automatically transitions to `POLLING` if WebSockets are unavailable, falling back to periodic REST polling. |
+| **Network Interface Badge** | Cyan/Blue/Emerald Badge (`Cable`, `Wifi`, or `WifiOff`) | **Auto-Detected Connection Indicator**: <br>• Highlights active link type: `WI-FI`, `ETHERNET`, `ETHERNET + WI-FI`, or `OFFLINE`.<br>• Clicking opens the Network Interface settings panel to view hardware MACs and IP subnet parameters. |
+| **Scan Subnet (Split Control)** | Rotating Radar (`Radar`) with chevron dropdown (`ChevronDown`) | **Subnet Discovery & Sweep Engine**: <br>• **Left Button (Trigger / Stop)**: Fires an immediate subnet sweep, pauses an ongoing indefinite sweep, or triggers an on-demand burst during auto-scanning.<br>• **Right Button (Dropdown)**: Opens the **Tabbed Configuration Modal** (`Scan Duration` vs. `Auto Scan`).<br>• **Automatic Monitoring Kick-off**: Running any subnet scan automatically starts Monitoring Mode and traffic safety profiling if it was previously off. |
+| **Monitoring Mode** | Emerald Pulsing Badge (`CheckCircle2`) or Muted Gray (`Square`) | **Defensive Packet Inspection & Traffic Telemetry**: <br>• **Active State**: Continuously inspects packet flows, updates 2D router telemetry, and executes real-time anomaly heuristics.<br>• **4-Second Safety Hold Interlock**: To prevent accidental shutdown, turning off Monitoring Mode requires holding the button pressed down for 4 full seconds with a live red progress fill and countdown animation. |
+| **Baseline Learning Progress** | Amber Pulsing Badge (`BookOpen`) | **Active Profile Calibration**: <br>• Visible when baseline training is underway (e.g., `Learning (45%) • 8s`).<br>• Profiles normal IP-to-MAC assignments, typical throughput, and listening ports.<br>• Includes a 1-click **Stop** button to finalize baseline scoring early. |
+| **Demo Lab Shortcut** | Amber Sparkles (`Sparkles`) | **Instant Sandbox Access**: <br>• 1-click shortcut to the **Security Demonstration Laboratory** (`security-lab`).<br>• Enables rapid execution of the guided 5-step incident sequence without traversing menu trees. |
+| **LIVE / POLLING Badge** | Green Wi-Fi (`Wifi`) or Gray Disconnected (`WifiOff`) | **WebSocket Health Indicator**: <br>• Displays `LIVE` with an emerald indicator when connected to `ws://localhost:3000/ws` for real-time telemetry streaming.<br>• Automatically falls back to periodic REST polling if WebSockets are unavailable. |
+
+---
+
+### Subnet Scan & Auto-Scan Tabbed Modal Architecture
+
+Clicking the dropdown arrow (`ChevronDown`) next to the **Scan Subnet** button opens an inspector modal featuring a dual-tab architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  [ Clock: Scan Duration ]      [ RefreshCw: Auto Scan (ON) ]│
+├─────────────────────────────────────────────────────────────┤
+│ Tab 1: Single Scan Sweeps      Tab 2: Recurring Engine      │
+│  - Presets (10s, 15s, 30s, 60s)  - Presets (10s to 15m)    │
+│  - Continuous Slider (1s-60s)    - Custom Slider (5s-300s)  │
+│  - Time Overdrive (>60s-10m/Inf) - Indefinite vs Timed      │
+│  - Immediate Execution Button    - Live Sweep Progress Bar  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Tab 1: Subnet Scan Duration & Overdrive Mode
+
+The **Scan Duration** tab configures single, on-demand discovery sweeps:
+
+1. **Standard Durations & Presets**:
+   - **Instant (0s)**: Performs a fast single ARP table query and updates online/offline states.
+   - **Quick Presets**: 10-second Quick Sweep, 15-second Standard Sweep, 30-second Deep Sweep, 45-second Audit, and 60-second Standard Maximum.
+   - **Interactive Duration Slider**: Smoothly adjust duration between 1 second and 60 seconds with live visual label feedback.
+2. **Time Overdrive Mode Switch**:
+   - By default, single scan duration is capped at 60 seconds to protect network and CPU resources.
+   - Enabling **Time Overdrive** toggles extended scan windows:
+     - **120s (2 min)**, **300s (5 min)**, **600s (10 min)**.
+     - **Continuous Indefinite Scan (`∞ Continuous Scan`)**: Sweeps the subnet repeatedly every 4 seconds without stopping.
+   - **Resource & Safety Warning**: Clearly warns operators that continuous sweeps generate sustained ARP traffic and consume local CPU cycles.
+3. **Execution & Interlocks**:
+   - Click **Run Subnet Scan** to start the sweep with the configured duration.
+   - The button pill updates dynamically (e.g. `Scan Subnet (30s)`, `Scanning (24s)`, or `Scanning Indefinitely`).
+   - Clicking the button while scanning instantly cancels the sweep and restores idle state.
+
+#### Tab 2: Auto Scan (Continuous & Scheduled Subnet Sweeps)
+
+The **Auto Scan** tab decouples recurring background scheduling from single-sweep durations, providing a persistent, automated network sentinel:
+
+1. **Master Switch (ON / OFF)**:
+   - Toggle switch activates or deactivates the recurring sweep engine.
+   - When active, the header button badge displays an animated pulsing `AUTO` indicator with an active countdown.
+2. **Interval Configuration**:
+   - **Quick Interval Presets**: 10s, 15s, 30s, 1 min, 2 min, 5 min, 10 min, and 15 min.
+   - **Custom Interval Slider**: Fine-tune repeat frequency from **5 seconds up to 300 seconds (5 minutes)**.
+3. **Schedule Mode (Indefinite vs. Timed Sessions)**:
+   - **Scan Indefinitely (`∞`)**: Runs recurrent sweeps indefinitely until explicitly stopped by an administrator.
+   - **Timed Sessions**: Automatically limits the auto-scan run window to **5 minutes**, **15 minutes**, **30 minutes**, or **1 hour**, after which the engine disarms itself safely.
+4. **Live Progress & Status Telemetry Card**:
+   - **Completed Sweeps Counter**: Displays the exact number of discovery cycles executed (e.g. `12 sweeps done`).
+   - **Real-Time Countdown**: Live second-by-second countdown to the next sweep (e.g. `Next subnet sweep in: 8s`).
+   - **Animated Progress Bar**: Smooth linear progress bar visualizing elapsed interval percentage.
+5. **Non-Blocking Background Execution**:
+   - Auto-scans operate seamlessly without locking the dashboard, modal views, or topology inspector.
+   - Parameters are persisted in browser `localStorage` (`sentinel_autoscan_interval`, `sentinel_autoscan_indefinite`, `sentinel_autoscan_session`) so preferences remain intact across page refreshes.
+
+---
+
+### Monitoring Mode & Subnet Scan Visual Alignment
+
+To provide a cohesive, professional mission-control interface, the **Scan Subnet** and **Monitoring Mode** buttons are strictly aligned:
+
+- **Geometric Alignment**: Both controls share identical `h-8` heights, `rounded-md` corner radiuses, `text-xs font-medium` typography, and matching border weights.
+- **Automatic Monitoring Kick-off**: In real-world security operations, discovering devices without inspecting traffic is incomplete. Initiating any subnet scan (instant, timed, overdrive, or auto-scan) **automatically turns on Monitoring Mode** if it was paused, immediately capturing traffic telemetry and applying defensive risk heuristics.
+- **Accidental Deactivation Protection**: Monitoring Mode includes a 4-second hold safety interlock (`onPointerDown` / `onPointerUp`) with an animated red progress overlay, preventing accidental telemetry interruption.
 
 ---
 
@@ -447,10 +524,12 @@ Connect to `ws://localhost:3000/ws`.
 
 | Event Name | Description |
 |------------|-------------|
-| `system.status` | Emitted when system-wide counts or learning modes update. |
+| `system.status` | Emitted when system-wide counts, network interfaces, or operational modes update. |
+| `monitoring.updated` | Emitted when Monitoring Mode is toggled or auto-started (`{ active: boolean, mode: string }`). |
+| `devices.updated`| Emitted when all devices update following a subnet discovery scan. |
+| `device.updated`| Emitted when an individual device's trust status, IP, or risk score changes. |
 | `event.created` | Emitted whenever a network event (discovery, scan, DNS, traffic) occurs. |
 | `alert.created` | Emitted when a new security alert is generated by the detection engine. |
-| `device.updated`| Emitted when a device's trust status, IP, or risk score changes. |
 | `topology.updated` | Emitted when topology nodes or edge links change. |
 | `baseline.updated` | Emitted when baseline learning progress or confidence updates. |
 
@@ -460,24 +539,147 @@ Connect to `ws://localhost:3000/ws`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET`  | `/api/status` | Current system health, device counts, uptime, and collector mode. |
+| `GET`  | `/api/status` | Current system health, device counts, network interfaces, uptime, and collector mode. |
+| `GET`  | `/api/monitoring` | Get current Monitoring Mode state (`{ active: boolean, mode: string }`). |
+| `POST` | `/api/monitoring/toggle` | Toggle or set Monitoring Mode. Body: `{ "enabled": boolean }`. |
 | `GET`  | `/api/devices` | List all discovered devices with current IP, MAC, trust, and risk score. |
 | `GET`  | `/api/devices/:id` | Get full details for a single device (ports, DNS logs, IP history). |
 | `POST` | `/api/devices/:id/trust` | Set trust level (`known`, `new`, `guest`, `suspicious`, `blocked`). Body: `{ "trustStatus": "known" }`. |
+| `POST` | `/api/devices/:id/detect-os` | Run passive fingerprinting on a single device. |
+| `POST` | `/api/discovery/detect-all-os` | Batch fingerprint all registered devices on the subnet. |
 | `POST` | `/api/devices/:id/quarantine` | Isolate device via simulated ACL rule. Body: `{ "reason": "string" }`. |
 | `POST` | `/api/devices/:id/restore` | Remove quarantine isolation and restore routing. |
+| `DELETE`| `/api/devices/:id` | Remove a device record from the persistent inventory. |
 | `GET`  | `/api/topology` | Get 2D topology nodes and edge links with current throughput rates. |
 | `GET`  | `/api/events` | Retrieve recent network event logs (`?limit=100`). |
+| `POST` | `/api/events/clear` | Clear network event audit history. |
 | `GET`  | `/api/alerts` | Retrieve active and resolved security alerts. |
 | `POST` | `/api/alerts/:id/resolve` | Mark an alert as resolved. Body: `{ "resolvedBy": "Admin" }`. |
 | `GET`  | `/api/baseline` | Get baseline learning state, duration, and confidence score. |
-| `POST` | `/api/baseline/start-learning` | Initiate baseline learning. Body: `{ "durationSeconds": 15 }`. |
+| `POST` | `/api/baseline/start-learning` | Initiate baseline learning. Body: `{ "durationSeconds": 15, "indefinite": false }`. |
 | `POST` | `/api/baseline/finish-learning`| Manually complete baseline learning mode. |
 | `POST` | `/api/security-lab/events` | Trigger anomaly scenario (`new_device`, `port_scan`, `dns_anomaly`, `traffic_spike`, `ip_change`). |
 | `POST` | `/api/security-lab/reset` | Reset lab state and database to baseline defaults. |
 | `GET`  | `/api/settings` | Read current interface and detection weight configuration. |
 | `POST` | `/api/settings` | Update settings and detection weights. |
-| `POST` | `/api/discovery/scan` | Trigger immediate collector subnet discovery pass. |
+| `POST` | `/api/discovery/scan` | Trigger immediate collector subnet discovery pass. Body: `{ "durationSeconds": 0, "indefinite": false }`. <br>• Automatically starts Monitoring Mode if paused.<br>• Enriches online nodes with OS fingerprints.<br>• Recalculates compounded 0–100 risk scores.<br>• Broadcasts updates over WebSocket. |
+
+---
+
+## Developer & Debugging Guide for Humans
+
+This section provides maintainers and security developers with structural insight into how Network Sentinel functions internally and how to diagnose issues.
+
+### 1. Subnet Discovery Lifecycle Under the Hood
+
+When a user clicks **Scan Subnet**, configures an **Auto Scan**, or calls `POST /api/discovery/scan`:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. Trigger Invocation (UI Click / Auto-Scan Interval / REST API)            │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. Collector Driver Execution (`collectorManager.discoverNow()`)            │
+│    - Linux: Reads and parses kernel neighbor table `/proc/net/arp`          │
+│    - macOS: Spawns non-root `arp -an` and parses HW address entries         │
+│    - Sandbox / Demo: Queries deterministic `MockCollector` dataset          │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 3. Hardware MAC-to-Device Reconciliation                                    │
+│    - Matches discovered hardware MAC addresses against `data/store.json`    │
+│    - Discovered nodes: set to `status: 'online'` and update `lastSeen`      │
+│    - Undiscovered nodes: preserved with `status: 'offline'` (never deleted) │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 4. OS Fingerprinting & Enrichment Pipeline                                  │
+│    - Probes open ports & TCP/IP stack signatures for un-fingerprinted nodes │
+│    - Identifies device vendor and operating system (macOS, Linux, etc.)     │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 5. Dynamic Risk Score Recalculation                                         │
+│    - Evaluates detection heuristics (ports, DNS, traffic, trust status)     │
+│    - Produces explainable 0–100 risk scores and itemized evidence tags      │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 6. Automatic Monitoring Mode Activation                                     │
+│    - If Monitoring Mode was OFF, kicks off packet capture & traffic monitor │
+│    - Logs a `monitoring_event` in the audit log                             │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 7. Real-Time WebSocket Multi-Broadcast                                      │
+│    - Dispatches `devices.updated`, `system.status`, `monitoring.updated`,   │
+│      and `topology.updated` to all connected browser clients                │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2. Auto-Scan Engine Architecture & State Machine
+
+The Auto-Scan engine (`src/context/NetworkContext.tsx`) manages background scheduling on the client:
+
+- **State Fields**:
+  - `isAutoScanActive`: Boolean indicating whether recurring background scanning is running.
+  - `autoScanInterval`: Recurring interval in seconds (default: 30s, range: 5s to 300s).
+  - `autoScanCountdown`: Real-time remaining seconds until the next sweep.
+  - `autoScanCompletedSweeps`: Counter of completed sweeps in the current session.
+  - `autoScanIsIndefinite`: If `true`, runs indefinitely; if `false`, respects session duration limit.
+  - `autoScanSessionDuration`: Session limit in seconds (300s = 5m, 900s = 15m, 1800s = 30m, 3600s = 1h).
+- **LocalStorage State Persistence**:
+  Settings are persisted in `localStorage` under:
+  - `sentinel_autoscan_interval`
+  - `sentinel_autoscan_indefinite`
+  - `sentinel_autoscan_session`
+- **Timer Mechanics & Cleanup**:
+  - Auto-scan uses `setInterval` ticking every 1,000ms to decrement `autoScanCountdown`.
+  - When countdown reaches 0, it calls `api.triggerScan()` without UI blocking, increments `autoScanCompletedSweeps`, and resets the countdown.
+  - If a timed session expires (`elapsed >= session`), the timer disarms cleanly.
+  - Unmounting or calling `stopAutoScan()` clears `autoScanTimerRef.current`.
+
+### 3. Debugging Checklist & Helpful Terminal Commands
+
+#### Test Subnet Discovery via CLI
+```bash
+# Trigger an instant discovery sweep
+curl -X POST http://localhost:3000/api/discovery/scan \
+  -H "Content-Type: application/json" \
+  -d '{"durationSeconds": 0}'
+
+# Trigger a 15-second timed discovery window
+curl -X POST http://localhost:3000/api/discovery/scan \
+  -H "Content-Type: application/json" \
+  -d '{"durationSeconds": 15}'
+```
+
+#### Inspecting WebSocket Telemetry
+Open your browser's Developer Tools (`F12` or `Cmd+Option+I`):
+1. Go to the **Network** tab and filter by **WS** (WebSockets).
+2. Select the `/ws` connection and click the **Messages** tab.
+3. Observe incoming JSON frames: `system.status`, `devices.updated`, `topology.updated`, and `event.created`.
+
+#### Troubleshooting Empty ARP Tables on macOS / Linux
+On freshly booted machines, operating systems only store ARP entries for hosts they have communicated with recently. If a subnet scan discovers 0 or few devices:
+```bash
+# Send a broadcast ping to populate the local ARP neighbor cache:
+ping -c 3 255.255.255.255
+# (Or on a 192.168.1.0/24 subnet: ping -c 3 192.168.1.255)
+
+# Then inspect your OS neighbor table directly:
+# On macOS:
+arp -an
+# On Linux:
+cat /proc/net/arp
+```
+Once ARP entries exist, click **Scan Subnet** in Network Sentinel to catalog all devices immediately.
+
+#### Reset Database & State Programmatically
+```bash
+curl -X POST http://localhost:3000/api/security-lab/reset
+```
 
 ---
 

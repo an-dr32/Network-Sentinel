@@ -873,7 +873,30 @@ async function startServer() {
     res.json({ count: results.length, devices: results });
   });
 
-  // Discovery Trigger
+  /**
+   * Subnet Discovery Trigger (`POST /api/discovery/scan`)
+   *
+   * Architecture & Debugging Notes:
+   * 1. Query Active Driver:
+   *    - Calls `collectorManager.discoverNow()`, invoking the active driver
+   *      (Linux `/proc/net/arp`, macOS `arp -an`, or Mock collector).
+   * 2. MAC-to-Device Reconciliation:
+   *    - Reconciles active hardware MACs against stored devices.
+   *    - Updates `status: 'online'` and `lastSeen` timestamp for active nodes.
+   *    - Marks absent nodes as `status: 'offline'` (never deletes them; identity history persists).
+   * 3. OS Fingerprinting Enrichment:
+   *    - Automatically runs passive banner and port fingerprinting for newly online devices
+   *      that lack OS detection metadata.
+   * 4. Dynamic Risk Re-evaluation:
+   *    - Recalculates compounded 0-100 risk scores across all nodes to immediately reflect new ports,
+   *      unresolved alerts, or trust changes.
+   * 5. Monitoring Mode Auto-Activation:
+   *    - If Monitoring Mode is not currently active, it automatically launches background packet
+   *      collection, starts the traffic monitor, logs an audit event, and broadcasts the status update.
+   * 6. Real-Time Broadcasts:
+   *    - Broadcasts `devices.updated`, `system.status`, `monitoring.updated`, and `topology.updated`
+   *      over WebSocket to immediately refresh connected clients.
+   */
   app.post('/api/discovery/scan', async (req, res) => {
     const raw = req.body?.durationSeconds !== undefined ? parseInt(req.body.durationSeconds) : 0;
     const durationSeconds = raw > 0 ? raw : 0;
