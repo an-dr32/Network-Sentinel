@@ -19,10 +19,14 @@ import {
   RefreshCw,
   Check,
   Zap,
+  Radio,
+  Layers,
+  Plus,
 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
 import { api } from '../utils/api';
 import { NetworkInterfaceInfo } from '../types';
+import { ObservedPortsModal } from './ObservedPortsModal';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -34,9 +38,13 @@ export const SettingsView: React.FC = () => {
     refreshAll,
     resetSecurityLab,
     baseline,
+    observedPorts,
+    activeObservedPortNumbers,
     startBaselineLearning,
     finishBaselineLearning,
   } = useNetwork();
+
+  const [isObservedPortsModalOpen, setIsObservedPortsModalOpen] = useState(false);
 
   const [settings, setSettings] = useState<any>({
     subnet: status?.subnet || '',
@@ -544,6 +552,74 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Observed Ports & Monitored Services */}
+      <div className="bg-[#111113] border border-[#27272A] rounded-lg p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA] flex items-center gap-2">
+              <Radio className="w-4 h-4 text-emerald-400" />
+              <span>Observed Ports & Monitored Services</span>
+            </h3>
+            <p className="text-xs text-[#71717A] mt-1">
+              Configure which common TCP/UDP ports and non-standard custom ports are probed during active discovery scans and passive traffic monitoring.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              id="settings-configure-observed-ports-btn"
+              type="button"
+              onClick={() => setIsObservedPortsModalOpen(true)}
+              className="px-3.5 py-2 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Configure Observed Ports</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-3.5 bg-[#18181B] rounded-lg border border-[#27272A] space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#A1A1AA]">
+              Currently observing <strong className="text-emerald-400 font-mono">{activeObservedPortNumbers.length}</strong> ports
+              {observedPorts.filter((p) => p.isCustom).length > 0 && (
+                <span className="text-purple-400 font-mono ml-1">
+                  ({observedPorts.filter((p) => p.isCustom).length} custom non-standard)
+                </span>
+              )}
+            </span>
+            <span className="text-[11px] text-[#71717A] font-mono">
+              Total Catalog: {observedPorts.length} ports
+            </span>
+          </div>
+
+          {/* Active Ports Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {observedPorts
+              .filter((p) => activeObservedPortNumbers.includes(p.port))
+              .map((p) => (
+                <span
+                  key={p.port}
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono border flex items-center gap-1 ${
+                    p.isCustom
+                      ? 'bg-purple-950/40 text-purple-300 border-purple-800/40'
+                      : 'bg-[#121215] text-[#D4D4D8] border-[#27272A]'
+                  }`}
+                  title={`${p.service} (${p.protocol?.toUpperCase() || 'TCP'}) - ${p.description || ''}`}
+                >
+                  <span className="text-[#FAFAFA] font-bold">{p.port}</span>
+                  <span className="text-[10px] text-[#71717A]">{p.service}</span>
+                  {p.isCustom && (
+                    <span className="text-[9px] px-1 bg-purple-600/20 text-purple-300 rounded font-mono">
+                      C
+                    </span>
+                  )}
+                </span>
+              ))}
+          </div>
+        </div>
+      </div>
+
       {/* Local Data Management */}
       <div className="bg-[#111113] border border-[#27272A] rounded-lg p-5 space-y-4">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[#FAFAFA] flex items-center gap-2">
@@ -572,6 +648,12 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Observed Ports Configuration Modal */}
+      <ObservedPortsModal
+        isOpen={isObservedPortsModalOpen}
+        onClose={() => setIsObservedPortsModalOpen(false)}
+      />
     </div>
   );
 };

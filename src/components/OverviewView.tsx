@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -11,9 +11,14 @@ import {
   ChevronRight,
   Radio,
   Sparkles,
+  ChevronDown,
+  SlidersHorizontal,
+  Layers,
+  Plus,
 } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
 import { formatBytes, formatRate, formatTimeAgo, getRiskBadgeClasses, getTrustStatusClasses } from '../utils/formatters';
+import { ObservedPortsModal } from './ObservedPortsModal';
 
 export const OverviewView: React.FC = () => {
   const {
@@ -22,9 +27,13 @@ export const OverviewView: React.FC = () => {
     alerts,
     status,
     baseline,
+    observedPorts,
+    activeObservedPortNumbers,
     setSelectedDevice,
     setActiveView,
   } = useNetwork();
+
+  const [isObservedPortsModalOpen, setIsObservedPortsModalOpen] = useState(false);
 
   const totalDevices = devices.length;
   const knownDevices = devices.filter((d) => d.trustStatus === 'known').length;
@@ -250,10 +259,74 @@ export const OverviewView: React.FC = () => {
                 <span className="text-[#71717A] font-mono block text-[10px] uppercase">Baseline Confidence</span>
                 <span className="font-mono text-emerald-400 font-medium">{baseline?.confidenceScore || 90}%</span>
               </div>
-              <div className="bg-[#18181B] p-2.5 rounded border border-[#27272A]">
-                <span className="text-[#71717A] font-mono block text-[10px] uppercase">Observed Ports</span>
-                <span className="font-mono text-[#FAFAFA] font-medium">{baseline?.typicalPorts.join(', ') || '53, 80, 443'}</span>
+              <div
+                id="overview-observed-ports-card-trigger"
+                onClick={() => setIsObservedPortsModalOpen(true)}
+                className="bg-[#18181B] p-2.5 rounded border border-[#27272A] hover:border-emerald-500/60 hover:bg-[#1E1E22] cursor-pointer transition-all group"
+                title="Click to select multiple common ports or add custom ports"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[#71717A] font-mono block text-[10px] uppercase group-hover:text-emerald-400 transition-colors flex items-center gap-1">
+                    Observed Ports
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#71717A] group-hover:text-emerald-400 transition-transform group-hover:translate-y-0.5" />
+                </div>
+                <div className="flex items-baseline gap-1 mt-0.5 truncate">
+                  <span className="font-mono text-emerald-400 font-medium">
+                    {activeObservedPortNumbers.length > 0
+                      ? `${activeObservedPortNumbers.length} Monitored`
+                      : baseline?.typicalPorts.join(', ') || '53, 80, 443'}
+                  </span>
+                  {observedPorts.some((p) => p.isCustom) && (
+                    <span className="text-[10px] text-purple-400 font-mono">
+                      (+{observedPorts.filter((p) => p.isCustom).length} custom)
+                    </span>
+                  )}
+                </div>
               </div>
+            </div>
+
+            {/* Observed Ports Quick Bar & Services Dropdown Launcher */}
+            <div className="p-2.5 rounded-lg border border-[#27272A] bg-[#141417] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto py-0.5 scrollbar-none flex-1">
+                <span className="text-[10px] font-mono uppercase text-[#71717A] shrink-0 flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-emerald-400" /> Monitored Services:
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {observedPorts
+                    .filter((p) => activeObservedPortNumbers.includes(p.port))
+                    .slice(0, 7)
+                    .map((p) => (
+                      <span
+                        key={p.port}
+                        className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium border flex items-center gap-1 ${
+                          p.isCustom
+                            ? 'bg-purple-950/40 text-purple-300 border-purple-800/40'
+                            : 'bg-[#18181B] text-[#D4D4D8] border-[#27272A]'
+                        }`}
+                        title={`${p.service} (${p.protocol?.toUpperCase() || 'TCP'}) - ${p.description || ''}`}
+                      >
+                        <span className="text-[#FAFAFA] font-bold">{p.port}</span>
+                        <span className="text-[10px] text-[#A1A1AA]">{p.service}</span>
+                      </span>
+                    ))}
+                  {activeObservedPortNumbers.length > 7 && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-mono text-[#71717A]">
+                      +{activeObservedPortNumbers.length - 7} more
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <button
+                id="overview-manage-observed-ports-btn"
+                type="button"
+                onClick={() => setIsObservedPortsModalOpen(true)}
+                className="px-2.5 py-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-md transition-colors shrink-0 flex items-center gap-1"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+                <span>Configure Ports</span>
+              </button>
             </div>
           </div>
         </div>
@@ -375,6 +448,12 @@ export const OverviewView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Observed Ports Configuration Modal */}
+      <ObservedPortsModal
+        isOpen={isObservedPortsModalOpen}
+        onClose={() => setIsObservedPortsModalOpen(false)}
+      />
     </div>
   );
 };

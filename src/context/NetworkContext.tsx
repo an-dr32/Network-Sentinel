@@ -8,6 +8,7 @@ import {
   SystemStatus,
   RouterRequestEvent,
   RouterTrafficSummary,
+  ObservedPortConfig,
 } from '../types';
 import { api } from '../utils/api';
 import { getBrowserConnectionState } from '../utils/networkDetector';
@@ -23,6 +24,8 @@ interface NetworkContextType {
   alerts: Alert[];
   baseline: BaselineFeatures | null;
   topology: TopologyData | null;
+  observedPorts: ObservedPortConfig[];
+  activeObservedPortNumbers: number[];
   recentRouterRequests: RouterRequestEvent[];
   topologyTraffic: RouterTrafficSummary | null;
   selectedDevice: Device | null;
@@ -34,6 +37,17 @@ interface NetworkContextType {
   activeView: 'overview' | 'devices' | 'topology' | 'events' | 'activity' | 'alerts' | 'security-lab' | 'settings';
   setActiveView: (view: 'overview' | 'devices' | 'topology' | 'events' | 'activity' | 'alerts' | 'security-lab' | 'settings') => void;
   refreshAll: () => Promise<void>;
+  refreshObservedPorts: () => Promise<void>;
+  updateObservedPorts: (portNumbers: number[]) => Promise<void>;
+  addCustomObservedPort: (params: {
+    port: number;
+    service: string;
+    protocol?: 'tcp' | 'udp' | 'both';
+    description?: string;
+    category?: string;
+  }) => Promise<ObservedPortConfig>;
+  removeObservedPort: (port: number) => Promise<void>;
+  probeObservedPorts: () => Promise<void>;
   clearEvents: () => Promise<void>;
   updateDeviceTrust: (deviceId: string, trustStatus: string) => Promise<void>;
   updateDeviceName: (deviceId: string, customName: string) => Promise<void>;
@@ -78,6 +92,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [baseline, setBaseline] = useState<BaselineFeatures | null>(null);
   const [topology, setTopology] = useState<TopologyData | null>(null);
+  const [observedPorts, setObservedPorts] = useState<ObservedPortConfig[]>([]);
+  const [activeObservedPortNumbers, setActiveObservedPortNumbers] = useState<number[]>([]);
   const [recentRouterRequests, setRecentRouterRequests] = useState<RouterRequestEvent[]>([]);
   const [topologyTraffic, setTopologyTraffic] = useState<RouterTrafficSummary | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -219,13 +235,14 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Stable data refresh function
   const refreshAll = useCallback(async () => {
     try {
-      const [statusData, devicesData, eventsData, alertsData, baselineData, topoData] = await Promise.all([
+      const [statusData, devicesData, eventsData, alertsData, baselineData, topoData, observedData] = await Promise.all([
         api.getStatus().catch(() => null),
         api.getDevices().catch(() => []),
         api.getEvents(100).catch(() => []),
         api.getAlerts().catch(() => []),
         api.getBaseline().catch(() => null),
         api.getTopology().catch(() => null),
+        api.getObservedPorts().catch(() => null),
       ]);
 
       if (statusData) setStatus(statusData);
@@ -234,6 +251,10 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setAlerts(alertsData);
       if (baselineData) setBaseline(baselineData);
       if (topoData) setTopology(topoData);
+      if (observedData) {
+        setObservedPorts(observedData.observedPorts || []);
+        setActiveObservedPortNumbers(observedData.activePortNumbers || []);
+      }
 
       // Keep selected device synced if open without introducing dependency on selectedDevice
       setSelectedDevice((prev) => {
@@ -303,6 +324,14 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
           break;
         case 'baseline.updated':
           setBaseline(message.data);
+          break;
+        case 'observed_ports.updated':
+          if (message.data?.observedPorts) {
+            setObservedPorts(message.data.observedPorts);
+          }
+          if (message.data?.activePortNumbers) {
+            setActiveObservedPortNumbers(message.data.activePortNumbers);
+          }
           break;
         case 'topology.updated':
           setTopology(message.data);
@@ -768,6 +797,73 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const refreshObservedPorts = useCallback(async () => {
+    try {
+      const data = await api.getObservedPorts();
+      setObservedPorts(data.observedPorts || []);
+      setActiveObservedPortNumbers(data.activePortNumbers || []);
+    } catch (e) {
+      console.error('Failed to refresh observed ports:', e);
+    }
+  }, []);
+
+  const updateObservedPorts = useCallback(async (portNumbers: number[]) => {
+    try {
+      const res = await api.saveObservedPorts(portNumbers);
+      if (res.success) {
+        setObservedPorts(res.observedPorts);
+        setActiveObservedPortNumbers(res.activePortNumbers);
+      }
+    } catch (e) {
+      console.error('Failed to update observed ports:', e);
+      throw e;
+    }
+  }, []);
+
+  const addCustomObservedPort = useCallback(async (params: {
+    port: number;
+    service: string;
+    protocol?: 'tcp' | 'udp' | 'both';
+    description?: string;
+    category?: string;
+  }) => {
+    try {
+      const res = await api.addCustomObservedPort(params);
+      if (res.success) {
+        const updated = await api.getObservedPorts();
+        setObservedPorts(updated.observedPorts);
+        setActiveObservedPortNumbers(updated.activePortNumbers);
+        return res.port;
+      }
+      throw new Error('Failed to add custom port');
+    } catch (e) {
+      console.error('Failed to add custom port:', e);
+      throw e;
+    }
+  }, []);
+
+  const removeObservedPort = useCallback(async (port: number) => {
+    try {
+      await api.removeObservedPort(port);
+      const updated = await api.getObservedPorts();
+      setObservedPorts(updated.observedPorts);
+      setActiveObservedPortNumbers(updated.activePortNumbers);
+    } catch (e) {
+      console.error('Failed to remove observed port:', e);
+      throw e;
+    }
+  }, []);
+
+  const probeObservedPorts = useCallback(async () => {
+    try {
+      await api.probeObservedPorts();
+      await refreshAll();
+    } catch (e) {
+      console.error('Failed to probe observed ports:', e);
+      throw e;
+    }
+  }, [refreshAll]);
+
   return (
     <NetworkContext.Provider
       value={{
@@ -781,6 +877,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         alerts,
         baseline,
         topology,
+        observedPorts,
+        activeObservedPortNumbers,
         recentRouterRequests,
         topologyTraffic,
         selectedDevice,
@@ -792,6 +890,11 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activeView,
         setActiveView,
         refreshAll,
+        refreshObservedPorts,
+        updateObservedPorts,
+        addCustomObservedPort,
+        removeObservedPort,
+        probeObservedPorts,
         clearEvents,
         updateDeviceTrust,
         updateDeviceName,

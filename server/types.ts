@@ -18,6 +18,16 @@ export interface OpenPort {
   riskRating?: 'low' | 'medium' | 'high';
 }
 
+export interface ObservedPortConfig {
+  port: number;
+  service: string;
+  protocol?: 'tcp' | 'udp' | 'both';
+  description?: string;
+  category?: 'web' | 'remote' | 'file' | 'database' | 'iot' | 'network' | 'media' | 'custom' | 'other';
+  isCustom?: boolean;
+  enabled?: boolean;
+}
+
 export interface DeviceConnection {
   targetIp: string;
   targetPort: number;

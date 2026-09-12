@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import { GoogleGenAI } from '@google/genai';
 import { Device, OpenPort, OsDetectionDetails } from './types';
 import { lookupOuiVendor, isRandomizedMac, getHardwareArchetype } from './ouiDatabase';
+import { observedPortsManager } from './observedPorts';
 
 const execAsync = promisify(exec);
 
@@ -162,7 +163,8 @@ export class OsFingerprintEngine {
         32400: 'plex-server',
       };
 
-      const service = serviceMap[port] || `tcp-${port}`;
+      const dynamicServiceMap = observedPortsManager.getServiceMap();
+      const service = dynamicServiceMap[port] || serviceMap[port] || `tcp-${port}`;
       socket.setTimeout(timeoutMs);
 
       socket.on('connect', () => {
@@ -399,10 +401,12 @@ export class OsFingerprintEngine {
     hasSynology: boolean;
     httpTitle?: string;
   }> {
-    const targetPorts = [
+    const defaultPorts = [
       22, 23, 53, 80, 135, 139, 443, 445, 515, 548, 554, 631, 1883, 3389,
       5000, 5001, 5357, 7000, 8000, 8008, 8080, 8443, 9000, 9100, 32400,
     ];
+    const activeObserved = observedPortsManager.getActivePortNumbers();
+    const targetPorts = Array.from(new Set([...defaultPorts, ...activeObserved])).sort((a, b) => a - b);
 
     const tcpResults = await Promise.all(
       targetPorts.map((port) => this.probeTcpPort(ip, port, 600))
@@ -1055,7 +1059,12 @@ Return a JSON object only in this format:
     };
   }
 
-  private mergePorts(existing: OpenPort[], detected: OpenPort[]): OpenPort[] {
+  public async probeAndEnrichDevicePorts(device: Device): Promise<OpenPort[]> {
+    const probe = await this.probeSignaturePorts(device.currentIp);
+    return this.mergePorts(device.openPorts || [], probe.openPorts);
+  }
+
+  public mergePorts(existing: OpenPort[], detected: OpenPort[]): OpenPort[] {
     const portMap = new Map<number, OpenPort>();
     for (const p of existing) {
       portMap.set(p.port, p);

@@ -138,6 +138,22 @@ export class DetectionEngine {
       });
     }
 
+    // Additional active observed services (including custom-defined ports)
+    const customOrNonStandard = openPorts.filter(
+      (p) =>
+        !criticalPorts.includes(p.port) &&
+        !mediumPorts.includes(p.port) &&
+        ![80, 443, 53, 123, 67, 68].includes(p.port)
+    );
+    for (const cPort of customOrNonStandard) {
+      evidence.push({
+        rule: `Observed active service: Port ${cPort.port} (${cPort.service || 'tcp'})`,
+        points: 4,
+        reason: `Monitored service '${cPort.service}' actively verified and responding on Port ${cPort.port}.`,
+        timestamp: now,
+      });
+    }
+
     if (openPorts.length >= 4) {
       evidence.push({
         rule: `Expanded port attack surface (${openPorts.length} open ports)`,

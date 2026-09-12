@@ -13,6 +13,7 @@ Network Sentinel is a high-contrast, privacy-first network security console desi
 - [Directory Structure](#directory-structure)
 - [Detection & Risk Engine Breakdown](#detection--risk-engine-breakdown)
 - [Baseline Learning Mode](#baseline-learning-mode)
+- [Observed Ports & Expected Services Architecture](#observed-ports--expected-services-architecture)
 - [Interactive Features & Views](#interactive-features--views)
   - [1. Overview (Mission Control)](#1-overview-mission-control)
   - [2. Subnet Inventory (Devices View)](#2-subnet-inventory-devices-view)
@@ -181,6 +182,107 @@ Baseline mode allows Network Sentinel to learn the normal behavior of your subne
    - Discovered listening ports per node
    - Standard DNS resolution targets
 4. **Confidence Score**: Displays a 0–100% confidence gauge. Once learning completes, devices that stay within baseline thresholds receive a `-10 pt` baseline deduction, reducing false positives.
+
+---
+
+## Observed Ports & Expected Services Architecture
+
+Network Sentinel incorporates an **Observed Ports Engine** that bridges active network port probing with passive traffic monitoring and explainable threat scoring.
+
+### 1. The Need for Dynamic Observed Ports
+In traditional network intrusion detection, scanners either check only a tiny set of hardcoded default ports or require complex external CLI flags (`-p 1-65535`). Network Sentinel provides:
+- A curated catalog of common network services categorized by operational domain.
+- A user-friendly multi-select dropdown interface allowing operators to choose exactly which services are expected and observed on their subnet.
+- The ability to create **custom, non-standard observed ports** (e.g. proprietary SCADA controllers, Home Assistant hubs, internal microservice APIs, or development ports).
+- Direct bidirectional coupling between the chosen observed ports, the **subnet discovery scanner**, the **OS fingerprinting engine**, and the **live passive traffic monitor**.
+
+### 2. Common Ports Catalog (Built-in)
+The system includes built-in profiles for standard ports, their expected service daemon, protocol, and functional description:
+
+| Port | Service | Protocol | Category | Description / Expected Behavior |
+|------|---------|----------|----------|---------------------------------|
+| **21** | FTP | TCP | File Sharing | File Transfer Protocol (unencrypted legacy control) |
+| **22** | SSH | TCP | Remote Access | Secure Shell remote administration & SFTP |
+| **23** | Telnet | TCP | Remote Access | Legacy plaintext terminal (flagged high risk) |
+| **25** | SMTP | TCP | Network Core | Simple Mail Transfer Protocol |
+| **53** | DNS | UDP/TCP | Network Core | Domain Name System resolver |
+| **80** | HTTP | TCP | Web & Proxies | World Wide Web unencrypted plaintext traffic |
+| **110** | POP3 | TCP | Network Core | Post Office Protocol email retrieval |
+| **123** | NTP | UDP | Network Core | Network Time Protocol clock synchronization |
+| **135** | MS-RPC | TCP | Network Core | Microsoft Windows RPC endpoint mapper |
+| **139** | NetBIOS | TCP | File Sharing | NetBIOS Session Service / Windows file sharing |
+| **143** | IMAP | TCP | Network Core | Internet Message Access Protocol |
+| **443** | HTTPS | TCP | Web & Proxies | Encrypted Web Traffic (TLS/SSL encryption) |
+| **445** | SMB | TCP | File Sharing | Server Message Block Windows file/printer sharing |
+| **515** | LPD/LPR | TCP | Network Core | Line Printer Daemon network printing service |
+| **548** | AFP | TCP | File Sharing | Apple Filing Protocol macOS network shares |
+| **554** | RTSP | TCP | Streaming & Media | Real Time Streaming Protocol for IP security cameras |
+| **631** | IPP / CUPS | TCP | Network Core | Internet Printing Protocol / CUPS print server |
+| **993** | IMAPS | TCP | Network Core | IMAP over TLS encrypted email retrieval |
+| **1433** | MSSQL | TCP | Databases | Microsoft SQL Server database listener |
+| **1883** | MQTT | TCP | IoT & Smart Home | Lightweight IoT publish-subscribe telemetry broker |
+| **1900** | SSDP | UDP | IoT & Smart Home | Simple Service Discovery Protocol (UPnP discovery) |
+| **3000** | Dev Server | TCP | Web & Proxies | Modern web application development & preview server |
+| **3306** | MySQL | TCP | Databases | MySQL / MariaDB relational database engine |
+| **3389** | RDP | TCP | Remote Access | Microsoft Remote Desktop Protocol desktop access |
+| **5000** | Synology DSM | TCP | File Sharing | Synology DiskStation Manager web portal |
+| **5001** | DSM SSL | TCP | File Sharing | Synology DiskStation Manager HTTPS portal |
+| **5353** | mDNS | UDP | Network Core | Multicast DNS / Bonjour zero-configuration discovery |
+| **5357** | WSD | TCP | Network Core | Web Services for Devices (Windows discovery daemon) |
+| **5432** | PostgreSQL | TCP | Databases | PostgreSQL object-relational database engine |
+| **5900** | VNC | TCP | Remote Access | Virtual Network Computing remote desktop sharing |
+| **6379** | Redis | TCP | Databases | In-memory key-value cache and data store |
+| **7000** | AirPlay | TCP | Streaming & Media | Apple AirPlay screen mirroring & audio streaming |
+| **8000** | HTTP-Alt | TCP | Web & Proxies | Alternative HTTP proxy or internal web service |
+| **8008** | Chromecast | TCP | Streaming & Media | Google Cast / DIAL media device control |
+| **8080** | HTTP Proxy | TCP | Web & Proxies | Common web proxy, Apache Tomcat, or API gateway |
+| **8443** | HTTPS-Alt | TCP | Web & Proxies | Secondary TLS/SSL web interface & management portal |
+| **8883** | MQTT-TLS | TCP | IoT & Smart Home | Secure MQTT with TLS/SSL encryption |
+| **9000** | Portainer | TCP | Web & Proxies | Container management console & SonarQube |
+| **9100** | JetDirect | TCP | Network Core | Raw HP JetDirect / network printer data stream |
+| **27017** | MongoDB | TCP | Databases | NoSQL document database server |
+| **32400** | Plex | TCP | Streaming & Media | Plex Media Server home streaming portal |
+
+### 3. Creating Custom / Non-Standard Monitored Ports
+When working with proprietary devices, local home lab equipment, or unique internal infrastructure, operators can define custom ports:
+- **Port Number**: Any valid integer between `1` and `65535`.
+- **Expected Service Name**: Free-text label (e.g., `Home Assistant`, `SCADA Modbus`, `Custom ERP API`, `Minecraft Server`).
+- **Protocol**: Select `TCP`, `UDP`, or `Both`.
+- **Category**: Custom, Web, Remote Access, Smart Home / IoT, Database, File Sharing, Core Network, or Streaming Media.
+- **Description / Notes**: Human-readable context explaining why the port is under active observation.
+- Custom ports are stored in `sentinel_db.json`, tagged with a distinct `CUSTOM` badge, and can be individually deleted or toggled.
+
+### 4. How Observed Ports Flow Across the Stack
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. Configuration (UI Modal / REST API)                                      │
+│    - Operator selects ports from common catalog or inputs custom port       │
+│    - Persisted in local database `sentinel_db.json`                         │
+│    - Broadcasts `observed_ports.updated` over WebSocket                     │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. Subnet Discovery & Active Fingerprinting (`server/osFingerprint.ts`)     │
+│    - `probeSignaturePorts()` queries `observedPortsManager.getActivePortNumbers()`│
+│    - Target ports for every online host are dynamically merged              │
+│    - `probeTcpPort()` probes each target, maps service banners, and logs    │
+│      open/closed states directly into device records                        │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 3. Passive Traffic Monitoring Simulation (`server/trafficMonitor.ts`)       │
+│    - `pickRealisticInteraction()` incorporates active observed ports        │
+│    - Realistic synthetic requests emulate authentic IoT/server communications│
+│      matching user-configured ports and services                            │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 4. Detection & Explainable Threat Scoring (`server/detection.ts`)           │
+│    - Detection engine verifies open ports against the observed ports set    │
+│    - Generates itemized risk evidence (e.g. unexpected open management ports│
+│      on untrusted nodes or new unverified listeners)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -563,6 +665,11 @@ Connect to `ws://localhost:3000/ws`.
 | `GET`  | `/api/settings` | Read current interface and detection weight configuration. |
 | `POST` | `/api/settings` | Update settings and detection weights. |
 | `POST` | `/api/discovery/scan` | Trigger immediate collector subnet discovery pass. Body: `{ "durationSeconds": 0, "indefinite": false }`. <br>• Automatically starts Monitoring Mode if paused.<br>• Enriches online nodes with OS fingerprints.<br>• Recalculates compounded 0–100 risk scores.<br>• Broadcasts updates over WebSocket. |
+| `GET`  | `/api/observed-ports` | Get all common catalog and custom observed ports, active ports list, and counts. |
+| `POST` | `/api/observed-ports` | Update active monitored port numbers. Body: `{ "portNumbers": [80, 443, 22, ...] }`. |
+| `POST` | `/api/observed-ports/custom` | Define a new custom non-standard observed port. Body: `{ "port": 8123, "service": "Home Assistant", "protocol": "tcp", "description": "...", "category": "iot" }`. |
+| `DELETE`| `/api/observed-ports/:port` | Delete a custom observed port from the configuration. |
+| `POST` | `/api/observed-ports/batch-probe` | Probe all online subnet devices for the active observed ports immediately, enrich device open port arrays, and recalculate risk. |
 
 ---
 
@@ -640,7 +747,46 @@ The Auto-Scan engine (`src/context/NetworkContext.tsx`) manages background sched
   - If a timed session expires (`elapsed >= session`), the timer disarms cleanly.
   - Unmounting or calling `stopAutoScan()` clears `autoScanTimerRef.current`.
 
-### 3. Debugging Checklist & Helpful Terminal Commands
+### 3. Observed Ports Architecture & Debugging Notes
+
+The Observed Ports system synchronizes port definitions between database storage, active network socket testing, and passive traffic simulation:
+
+- **Source of Truth (`server/observedPorts.ts`)**:
+  - `observedPortsManager`: Singleton instance maintaining the `COMMON_PORTS_CATALOG` combined with persistent user configs from `server/db.ts`.
+  - Methods: `getAllPorts()`, `getActivePortNumbers()`, `saveActivePortNumbers()`, `addCustomPort()`, `removePort()`, `getServiceForPort()`.
+- **Database Schema**:
+  - Persisted in `data/sentinel_db.json` (or `sentinel_db.json`) under the key `"observedPorts": [...]`.
+  - Stored structure: `{ port: number, service: string, protocol: 'tcp'|'udp'|'both', description?: string, category?: string, isCustom?: boolean, enabled?: boolean }`.
+- **Port Probing Engine (`server/osFingerprint.ts`)**:
+  - Probing uses `probeSignaturePorts()` which pulls `observedPortsManager.getActivePortNumbers()`.
+  - Connects using non-blocking Node.js `net.Socket` with 120ms timeouts to avoid blocking scanning loops.
+  - When open, records port number, inferred or custom service banner, protocol, and state `open`.
+- **Traffic Simulator (`server/trafficMonitor.ts`)**:
+  - `pickRealisticInteraction()` randomly pairs online devices with one of the active observed ports, emitting realistic client/server interactions and syslog events.
+
+#### Testing Observed Ports via CLI
+```bash
+# 1. Fetch current list of observed ports and active status:
+curl -s http://localhost:3000/api/observed-ports | jq .
+
+# 2. Add a custom non-standard port (e.g. Home Assistant port 8123):
+curl -X POST http://localhost:3000/api/observed-ports/custom \
+  -H "Content-Type: application/json" \
+  -d '{"port": 8123, "service": "Home Assistant", "protocol": "tcp", "description": "Home automation controller", "category": "iot"}' | jq .
+
+# 3. Enable a specific set of active port numbers:
+curl -X POST http://localhost:3000/api/observed-ports \
+  -H "Content-Type: application/json" \
+  -d '{"portNumbers": [22, 80, 443, 8123, 3389]}' | jq .
+
+# 4. Trigger immediate batch probe of observed ports across all online subnet nodes:
+curl -X POST http://localhost:3000/api/observed-ports/batch-probe | jq .
+
+# 5. Delete a custom port:
+curl -X DELETE http://localhost:3000/api/observed-ports/8123 | jq .
+```
+
+### 4. Debugging Checklist & Helpful Terminal Commands
 
 #### Test Subnet Discovery via CLI
 ```bash

@@ -7,6 +7,7 @@ import {
   BaselineFeatures,
   ResponseResult,
   OpenPort,
+  ObservedPortConfig,
 } from './types';
 
 export interface DatabaseSchema {
@@ -15,6 +16,7 @@ export interface DatabaseSchema {
   alerts: Alert[];
   baseline: BaselineFeatures;
   actions: ResponseResult[];
+  observedPorts?: ObservedPortConfig[];
   settings: {
     subnet: string;
     interfaceName: string;
@@ -254,6 +256,15 @@ export class Database {
     this.data.baseline = { ...this.data.baseline, ...updates };
     this.save();
     return this.data.baseline;
+  }
+
+  public getObservedPorts(): ObservedPortConfig[] {
+    return this.data.observedPorts || [];
+  }
+
+  public saveObservedPorts(ports: ObservedPortConfig[]) {
+    this.data.observedPorts = ports;
+    this.save();
   }
 
   public getSettings() {

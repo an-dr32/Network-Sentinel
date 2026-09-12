@@ -11,6 +11,7 @@ import { collectorManager } from './server/collectors/collectorManager';
 import { securityLabEngine } from './server/securityLab';
 import { osFingerprintEngine } from './server/osFingerprint';
 import { trafficMonitor } from './server/trafficMonitor';
+import { observedPortsManager } from './server/observedPorts';
 import { SystemStatus, TopologyData, TopologyNode, TopologyEdge, NetworkEvent, OsDetectionDetails } from './server/types';
 import {
   getSystemNetworkInterfaces,
@@ -840,6 +841,113 @@ async function startServer() {
     res.json({ device: updated });
   });
 
+  // ==========================================
+  // Observed Ports Configuration & Probing APIs
+  // ==========================================
+
+  app.get('/api/observed-ports', (req, res) => {
+    const observedPorts = observedPortsManager.getObservedPorts();
+    const activePortNumbers = observedPortsManager.getActivePortNumbers();
+    res.json({
+      observedPorts,
+      activePortNumbers,
+      count: observedPorts.length,
+      activeCount: activePortNumbers.length,
+    });
+  });
+
+  app.post('/api/observed-ports', (req, res) => {
+    const { portNumbers, ports } = req.body;
+    let updated;
+    if (Array.isArray(portNumbers)) {
+      updated = observedPortsManager.updateActivePorts(portNumbers);
+    } else if (Array.isArray(ports)) {
+      updated = observedPortsManager.setObservedPorts(ports);
+    } else {
+      return res.status(400).json({ error: 'Expected portNumbers or ports array' });
+    }
+
+    broadcast('observed_ports.updated', {
+      observedPorts: updated,
+      activePortNumbers: observedPortsManager.getActivePortNumbers(),
+    });
+    broadcast('baseline.updated', db.getBaseline());
+
+    res.json({
+      success: true,
+      observedPorts: updated,
+      activePortNumbers: observedPortsManager.getActivePortNumbers(),
+    });
+  });
+
+  app.post('/api/observed-ports/custom', (req, res) => {
+    const { port, service, protocol, description, category } = req.body;
+    try {
+      const created = observedPortsManager.addCustomPort({
+        port: Number(port),
+        service: service ? String(service) : `custom-${port}`,
+        protocol: protocol === 'udp' || protocol === 'both' ? protocol : 'tcp',
+        description: description ? String(description) : undefined,
+        category: category || 'custom',
+      });
+
+      broadcast('observed_ports.updated', {
+        observedPorts: observedPortsManager.getObservedPorts(),
+        activePortNumbers: observedPortsManager.getActivePortNumbers(),
+      });
+      broadcast('baseline.updated', db.getBaseline());
+
+      res.json({ success: true, port: created });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to create custom observed port' });
+    }
+  });
+
+  app.delete('/api/observed-ports/:port', (req, res) => {
+    const port = parseInt(req.params.port);
+    if (isNaN(port)) {
+      return res.status(400).json({ error: 'Invalid port number' });
+    }
+
+    const removed = observedPortsManager.removePort(port);
+    broadcast('observed_ports.updated', {
+      observedPorts: observedPortsManager.getObservedPorts(),
+      activePortNumbers: observedPortsManager.getActivePortNumbers(),
+    });
+    broadcast('baseline.updated', db.getBaseline());
+
+    res.json({ success: removed });
+  });
+
+  // Probes all online devices for the currently configured observed ports
+  app.post('/api/observed-ports/batch-probe', async (req, res) => {
+    const devices = db.getDevices().filter((d) => d.status === 'online');
+    const updatedDevices = [];
+
+    for (const dev of devices) {
+      try {
+        const enrichedPorts = await osFingerprintEngine.probeAndEnrichDevicePorts(dev);
+        const updated = db.updateDevice(dev.id, { openPorts: enrichedPorts });
+        if (updated) {
+          const evalRisk = detectionEngine.evaluateDeviceRisk(updated);
+          const finalDev = db.updateDevice(updated.id, {
+            riskScore: evalRisk.score,
+            riskSeverity: evalRisk.severity,
+            riskEvidence: evalRisk.evidence,
+          })!;
+          updatedDevices.push(finalDev);
+          broadcast('device.updated', finalDev);
+        }
+      } catch (err) {
+        console.warn(`Probe failed for ${dev.hostname}:`, err);
+      }
+    }
+
+    broadcast('system.status', getSystemStatus());
+    broadcast('topology.updated', generateTopologyData());
+    res.json({ count: updatedDevices.length, devices: updatedDevices });
+  });
+
   // Batch OS Detection Across All Devices
   app.post('/api/discovery/detect-all-os', async (req, res) => {
     const devices = db.getDevices();
@@ -937,18 +1045,26 @@ async function startServer() {
       }
     }
 
-    // Automatically enrich devices with OS fingerprinting if not yet fingerprinted
+    // Automatically enrich devices with OS fingerprinting and probe active observed ports
     for (const dev of db.getDevices()) {
-      if (dev.status === 'online' && (!dev.osDetectionDetails || !dev.osGuess)) {
+      if (dev.status === 'online') {
         try {
-          const fp = await osFingerprintEngine.fingerprintDevice(dev);
-          db.updateDevice(dev.id, {
-            osGuess: fp.osGuess,
-            osConfidence: fp.confidence,
-            osDetectionDetails: fp.details,
-            deviceType: fp.deviceType,
-            openPorts: fp.openPorts,
-          });
+          if (!dev.osDetectionDetails || !dev.osGuess) {
+            const fp = await osFingerprintEngine.fingerprintDevice(dev);
+            db.updateDevice(dev.id, {
+              osGuess: fp.osGuess,
+              osConfidence: fp.confidence,
+              osDetectionDetails: fp.details,
+              deviceType: fp.deviceType,
+              openPorts: fp.openPorts,
+            });
+          } else {
+            // Re-probe active observed ports so newly added or custom ports are detected
+            const enrichedPorts = await osFingerprintEngine.probeAndEnrichDevicePorts(dev);
+            db.updateDevice(dev.id, {
+              openPorts: enrichedPorts,
+            });
+          }
         } catch {}
       }
     }

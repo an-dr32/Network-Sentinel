@@ -7,6 +7,7 @@ import {
   SystemStatus,
   ResponseResult,
   NetworkInterfaceInfo,
+  ObservedPortConfig,
 } from '../types';
 
 export const api = {
@@ -271,5 +272,65 @@ export const api = {
       // Return fallback
       return { success: false, status: null as any };
     }
+  },
+
+  async getObservedPorts(): Promise<{
+    observedPorts: ObservedPortConfig[];
+    activePortNumbers: number[];
+    count: number;
+    activeCount: number;
+  }> {
+    const res = await fetch('/api/observed-ports');
+    if (!res.ok) throw new Error('Failed to fetch observed ports');
+    return res.json();
+  },
+
+  async saveObservedPorts(portNumbers: number[]): Promise<{
+    success: boolean;
+    observedPorts: ObservedPortConfig[];
+    activePortNumbers: number[];
+  }> {
+    const res = await fetch('/api/observed-ports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ portNumbers }),
+    });
+    if (!res.ok) throw new Error('Failed to save observed ports');
+    return res.json();
+  },
+
+  async addCustomObservedPort(params: {
+    port: number;
+    service: string;
+    protocol?: 'tcp' | 'udp' | 'both';
+    description?: string;
+    category?: string;
+  }): Promise<{ success: boolean; port: ObservedPortConfig }> {
+    const res = await fetch('/api/observed-ports/custom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to add custom observed port');
+    }
+    return res.json();
+  },
+
+  async removeObservedPort(port: number): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/observed-ports/${port}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`Failed to remove port ${port}`);
+    return res.json();
+  },
+
+  async probeObservedPorts(): Promise<{ count: number; devices: Device[] }> {
+    const res = await fetch('/api/observed-ports/batch-probe', {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to probe devices for observed ports');
+    return res.json();
   },
 };

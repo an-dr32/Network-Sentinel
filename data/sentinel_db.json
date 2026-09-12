@@ -1,21 +1,6 @@
 {
   "devices": [],
-  "events": [
-    {
-      "id": "evt_1789096140370_nfl6i5",
-      "timestamp": "2026-09-11T03:09:00.370Z",
-      "type": "monitoring_event",
-      "severity": "info",
-      "title": "Monitoring Mode Auto-Started",
-      "description": "Passive packet inspection, traffic telemetry, and anomaly heuristics automatically started following the subnet scan.",
-      "evidence": {
-        "action": "auto_start_after_scan",
-        "collectorActive": true,
-        "timestamp": "2026-09-11T03:09:00.370Z"
-      },
-      "simulated": false
-    }
-  ],
+  "events": [],
   "alerts": [],
   "baseline": {
     "isLearning": false,
@@ -24,7 +9,7 @@
     "devicesLearned": 0,
     "eventsAnalyzed": 0,
     "totalObservedPackets": 0,
-    "startTime": "2026-09-10T23:45:00.000Z",
+    "startTime": "2026-09-12T03:16:15.233Z",
     "estimatedRemainingSeconds": 0,
     "knownSubnets": [],
     "typicalPorts": [],

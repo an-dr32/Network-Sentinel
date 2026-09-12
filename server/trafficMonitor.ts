@@ -1,4 +1,5 @@
 import { db } from './db';
+import { observedPortsManager } from './observedPorts';
 import {
   Device,
   RouterRequestEvent,
@@ -227,6 +228,48 @@ export class TrafficMonitor {
     sizeBytes: number;
     summary: string;
   } {
+    // Check if device has open ports or if observed ports include custom/active services
+    const devOpenPorts = dev.openPorts || [];
+    const activeObserved = observedPortsManager.getObservedPorts().filter((p) => p.enabled);
+
+    // Prioritize device open ports that are in active observed list, or custom observed ports
+    const matchingPorts = activeObserved.filter(
+      (op) => devOpenPorts.some((p) => p.port === op.port) || (op.isCustom && Math.random() < 0.25)
+    );
+
+    if (matchingPorts.length > 0 && Math.random() < 0.35) {
+      const selected = matchingPorts[Math.floor(Math.random() * matchingPorts.length)];
+      const reqType: RouterRequestType =
+        selected.port === 80 || selected.port === 8080 || selected.port === 8000
+          ? 'HTTP'
+          : selected.port === 443 || selected.port === 8443
+          ? 'HTTPS'
+          : selected.port === 53
+          ? 'DNS'
+          : selected.port === 123
+          ? 'NTP'
+          : selected.port === 67 || selected.port === 68
+          ? 'DHCP'
+          : selected.port === 5353
+          ? 'mDNS'
+          : 'OTHER';
+
+      const protocol: 'UDP' | 'TCP' | 'ICMP' =
+        selected.protocol === 'udp'
+          ? 'UDP'
+          : selected.protocol === 'both'
+          ? Math.random() > 0.5 ? 'UDP' : 'TCP'
+          : 'TCP';
+
+      return {
+        requestType: reqType,
+        protocol,
+        port: selected.port,
+        sizeBytes: Math.floor(Math.random() * 850 + 90),
+        summary: `${selected.service} [Port ${selected.port}]: ${selected.description || 'Observed port session'}`,
+      };
+    }
+
     const vendorLower = (dev.vendor || '').toLowerCase();
     const osLower = (dev.osGuess || '').toLowerCase();
 
